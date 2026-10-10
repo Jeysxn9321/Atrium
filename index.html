@@ -400,6 +400,8 @@ html.seen #intro{display:none}
 #setup summary{font-size:1.25rem;color:var(--dim);margin:1.4rem 0 1rem;cursor:pointer}
 #setup .btn{justify-content:center}
 #setup .foot{display:flex;gap:1rem;justify-content:flex-end;margin-top:2rem}
+#setup .tvcode{font-family:var(--display);font-size:6rem;letter-spacing:.18em;text-align:center;color:#fff;background:var(--panel2);border-radius:.8rem;padding:1.2rem .6rem;margin:1rem 0}
+html.tv #setup .tvcode{font-size:7rem}
 #setup .ver{font-size:1.05rem;color:var(--faint);margin:1.4rem 0 0}
 #setup .ver a{color:var(--dim);text-decoration:underline}
 #setup .msg{min-height:1.8rem;font-size:1.25rem;color:var(--dim);margin-top:1rem}
@@ -681,7 +683,7 @@ html.tv .credit{padding-bottom:5vh}
   keepStorage();
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
-  const BUILD = '2026-10-10 21:05 UTC';
+  const BUILD = '2026-10-10 21:21 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1067,6 +1069,52 @@ html.tv .credit{padding-bottom:5vh}
 
   // ---------- settings ----------
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---------- signing a TV in from the phone ----------
+  // The TV shows a code. The phone encrypts the sign-in with that code and leaves it on a free public message
+  // service (ntfy.sh) under a name that is a hash of the code; the TV looks there, decrypts it with the code, and is signed in.
+  // The service only ever holds text that cannot be read without the code.
+  const RELAY = 'https://ntfy.sh/';
+  const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';          // no 0, O, 1, I
+  const newCode = () => { const a = crypto.getRandomValues(new Uint8Array(8)); return Array.from(a, v => CODE_CHARS[v % 32]).join(''); };
+  const cleanCode = t => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const goodCode = c => c.length === 8 && Array.from(c).every(ch => CODE_CHARS.indexOf(ch) >= 0);
+  const showCode = c => c.slice(0, 4) + '-' + c.slice(4);
+  const b64 = u => { let r = ''; for (let i = 0; i < u.length; i++) r += String.fromCharCode(u[i]); return btoa(r); };
+  const unb64 = t => Uint8Array.from(atob(t), c => c.charCodeAt(0));
+  const tvMemo = {};
+  function tvCrypto(code) {
+    return tvMemo[code] || (tvMemo[code] = (async () => {
+      const enc = new TextEncoder();
+      const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('atrium-tv-key'), iterations: 100000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+      const h = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode('atrium-tv-topic:' + code)));
+      return { key: key, topic: 'atrium-' + Array.from(h.slice(0, 12), b => b.toString(16).padStart(2, '0')).join('') };
+    })());
+  }
+  async function tvSend(code, payload) {
+    const c = await tvCrypto(code), iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, c.key, new TextEncoder().encode(JSON.stringify(payload))));
+    const r = await fetch(RELAY + c.topic, { method: 'POST', body: b64(iv) + '.' + b64(ct) });
+    if (!r.ok) throw new Error('relay ' + r.status);
+  }
+  async function tvReceive(code) {
+    const c = await tvCrypto(code);
+    const r = await fetch(RELAY + c.topic + '/json?poll=1&since=all');
+    if (r.status === 429) throw new Error('slow down');
+    if (!r.ok) return null;
+    const lines = (await r.text()).split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const m = JSON.parse(lines[i]); if (m.event !== 'message') continue;
+        const parts = String(m.message).split('.');
+        const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(parts[0]) }, c.key, unb64(parts[1]));
+        return JSON.parse(new TextDecoder().decode(pt));
+      } catch (e) {}
+    }
+    return null;
+  }
+
   function openSettings(first, notice) {
     let box = document.getElementById('setup');
     if (box) box.remove();
@@ -1079,6 +1127,7 @@ html.tv .credit{padding-bottom:5vh}
       (notice ? '<p class="hint">' + esc(notice) + '</p>' : '') +
       (first ? '<p>Sign in once on this device: it stays signed in. Your library, My list and your TorBox add-on come from your Stremio account.</p>' : '') +
       (first && isIOS && !standalone ? '<p class="hint">On iPhone, first tap Share, then <b>Add to Home Screen</b>, then open Atrium from the Home Screen and sign in there. Safari and the Home Screen app keep their sign-ins apart, so signing in inside the Home Screen app is the one that lasts.</p>' : '') +
+      (isTV && first && !signed ? '<h3>Sign in from your phone</h3><p>On your phone, open Atrium, tap the gear, find <b>Sign in a TV</b> and type this code:</p><div class="tvcode" id="tvCode"></div><div class="msg" id="tvMsg">Waiting for your phone…</div>' : '') +
       '<h3>Stremio account' + (signed ? ' <span class="okmark">signed in</span>' : '') + '</h3>' +
       (signed ? '<details><summary>Sign in with another account</summary>' : '') +
       '<label>Email<input id="suMail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>' +
@@ -1089,6 +1138,7 @@ html.tv .credit{padding-bottom:5vh}
       '<label>Key (the content of stremio-key.txt)<input id="suKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label></details>' +
       '<h3>TMDB key <small>optional: more trailers and the newest episodes</small></h3>' +
       '<label>Key (the content of tmdb-key.txt)<input id="suTmdb" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + (tmdbKey() ? 'saved' : '') + '"></label>' +
+      (signed && !isTV ? '<h3>Sign in a TV <small>type the code the TV shows, and this phone signs it in</small></h3><label>Code on the TV<input id="suTv" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH"></label><button class="btn more" id="suTvSend">Send sign-in to the TV</button>' : '') +
       '<h3>Picture</h3>' +
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<h3>Player</h3><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
@@ -1125,6 +1175,35 @@ html.tv .credit{padding-bottom:5vh}
       if (k) { if (!/^[A-Za-z0-9+/=_\-]{8,}$/.test(k)) { say('That Stremio key does not look right.', true); return; } mem.set(K.stremio, k); }
       if (!saveSmall()) return;
       if (before !== mem.get(K.stremio, '') + '|' + mem.get(K.tmdb, '') + '|' + mem.get(K.max, '')) location.reload(); else box.remove();
+    };
+    if ($('#tvCode')) {
+      let code = mem.get('atrium.m.tvcode', '');
+      if (!goodCode(code)) { code = newCode(); mem.set('atrium.m.tvcode', code); }
+      $('#tvCode').textContent = showCode(code);
+      (async () => {
+        while (document.body.contains(box)) {
+          try {
+            const got = await tvReceive(code);
+            if (got && /^[A-Za-z0-9+/=_\-]{8,}$/.test(String(got.k || ''))) {
+              mem.set(K.stremio, got.k);
+              if (/^[A-Za-z0-9._\-]{20,}$/.test(String(got.t || ''))) mem.set(K.tmdb, got.t);
+              mem.set('atrium.m.tvcode', '');
+              keepStorage();
+              const m = document.getElementById('tvMsg'); if (m) m.textContent = 'Signed in. Opening Atrium…';
+              location.reload(); return;
+            }
+          } catch (e) { await new Promise(r => setTimeout(r, 20000)); }      // the relay asked for fewer requests: wait longer
+          await new Promise(r => setTimeout(r, 6000));
+        }
+      })();
+    }
+    if ($('#suTvSend')) $('#suTvSend').onclick = async () => {
+      const code = cleanCode($('#suTv').value);
+      if (!goodCode(code)) { say('That is not a TV code: it has 8 letters and numbers, shown as ABCD-EFGH (no 0, O, 1 or I).', true); return; }
+      if (!stremioKey()) { say('This phone is not signed in.', true); return; }
+      say('Sending…');
+      try { await tvSend(code, { k: stremioKey(), t: tmdbKey() || '' }); say('Sent. The TV signs in within a few seconds. If it does not, check the code on the TV.'); }
+      catch (e) { say('Could not reach the relay. Check the connection and try again.', true); }
     };
     $('#suReload').onclick = ev => { ev.preventDefault(); location.replace(location.pathname + '?r=' + Date.now()); };
     const out = $('#suOut');
