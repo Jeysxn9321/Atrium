@@ -430,6 +430,44 @@ html.seen #intro{display:none}
   #top{padding-left:max(var(--pad),env(safe-area-inset-left));padding-right:max(var(--pad),env(safe-area-inset-right))}
 }
 
+/* ---------- tablet (iPad): Atrium's own wide layout, sized for fingers ----------
+   Atrium scales its letters with the window, which is right for a desk and too small at arm's
+   length on a tablet. So: a floor under the letter size, 44px to tap, room for the status bar. */
+@media (pointer:coarse) and (min-width:701px) and (min-height:521px){
+  html{font-size:max(11px,min(100vh / 72,100vw / 128))}
+  #top{height:calc(5.4rem + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);
+    padding-left:max(var(--pad),env(safe-area-inset-left));padding-right:max(var(--pad),env(safe-area-inset-right))}
+  #top{gap:1.4rem}
+  #tabs{gap:.2rem}
+  #tabs button{min-height:44px;padding:.4rem .55rem;display:inline-flex;align-items:center;border-bottom-width:0;position:relative;white-space:nowrap}
+  #tabs button.on::after{content:'';position:absolute;left:.55rem;right:.55rem;bottom:.35rem;height:2px;background:var(--red)}
+  .tb{min-width:44px;min-height:44px;margin-left:0}
+  .btn{min-height:44px}
+  .btn.small{min-height:40px}
+  .chip{min-height:40px;display:inline-flex;align-items:center}
+  #catBtn{min-height:44px}
+  #search{min-height:44px;width:auto;flex:1 1 15rem;max-width:30rem;min-width:0}
+  #search input{font-size:16px;min-width:0;width:100%;text-overflow:ellipsis}
+  #hero{min-height:46rem}
+  #hero .info{left:max(var(--pad),env(safe-area-inset-left))}
+  #rows,#grid,.grid{padding-bottom:calc(3rem + env(safe-area-inset-bottom))}
+  #openBar{bottom:calc(env(safe-area-inset-bottom) + 3rem)}
+  #toast{bottom:calc(env(safe-area-inset-bottom) + 3rem)}
+}
+/* a tablet held upright: no room for the search box beside the sections, so it folds into its icon and opens across the bar */
+@media (pointer:coarse) and (min-width:701px) and (max-width:900px) and (min-height:521px){
+  #top{gap:1rem}
+  #tabs button{padding-left:.45rem;padding-right:.45rem}
+  #tabs button.on::after{left:.45rem;right:.45rem}
+  #catBtn{max-width:8.4rem}
+  #catBtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #search{flex:none;width:44px;min-width:44px;max-width:none;position:relative;padding:0;justify-content:center;margin-left:auto;border-radius:50%}
+  #search input{position:absolute;inset:0;width:100%;opacity:0;caret-color:transparent}
+  #search:focus-within{position:absolute;left:max(var(--pad),env(safe-area-inset-left));right:max(var(--pad),env(safe-area-inset-right));
+    top:calc(50% + env(safe-area-inset-top) / 2);transform:translateY(-50%);width:auto;z-index:50;justify-content:flex-start;gap:.8rem;padding:0 1.4rem;border-radius:3rem;background:#000f}
+  #search:focus-within input{position:static;inset:auto;opacity:1;caret-color:auto;height:44px}
+}
+
 /* ---------- phone ---------- */
 @media (max-width:700px){
   html{font-size:clamp(10px,2.6vw,12.5px)}
