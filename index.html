@@ -414,6 +414,20 @@ html.tv #setup .tvcode{font-size:7rem}
 #openBar .cp{font-size:1.2rem;color:var(--dim);padding:.8rem 1rem;white-space:nowrap}
 #openBar .x{font-size:1.8rem;line-height:1;color:var(--faint);padding:.3rem .9rem .5rem}
 
+/* ---------- the player inside Atrium ---------- */
+#vp{position:fixed;inset:0;z-index:500;background:#000;cursor:none;user-select:none}
+#vp video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#vp .vtop{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 2.4rem) 5vw 6rem;background:linear-gradient(180deg,#000b,#0000);opacity:0;transition:opacity .25s;pointer-events:none}
+#vp .vtop b{font-family:var(--display);font-weight:400;font-size:3.4rem;letter-spacing:.03em}
+#vp .vbar{position:absolute;left:0;right:0;bottom:0;padding:6rem 5vw calc(env(safe-area-inset-bottom) + 3rem);background:linear-gradient(0deg,#000c,#0000);opacity:0;transition:opacity .25s;pointer-events:none}
+#vp.ui .vtop,#vp.ui .vbar{opacity:1}
+#vp .vrail{height:.5rem;border-radius:1rem;background:#fff4;overflow:hidden}
+#vp .vrail i{display:block;height:100%;width:0;background:var(--red)}
+#vp .vrow{display:flex;justify-content:space-between;gap:2rem;margin-top:1.2rem;font-size:1.5rem;color:#e8e8ec}
+#vp .vkeys{color:#fff9;font-size:1.25rem;text-align:center}
+#vp .vmsg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:70vw;text-align:center;font-size:2rem;line-height:1.4;background:#000b;border-radius:1rem;padding:1.6rem 2.4rem;opacity:0;transition:opacity .2s;pointer-events:none}
+#vp .vmsg.on{opacity:1}
+
 /* ---------- touch screens ---------- */
 @media (hover:none){
   .card:hover{transform:none;box-shadow:none;z-index:auto}
@@ -683,7 +697,7 @@ html.tv .credit{padding-bottom:5vh}
   keepStorage();
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
-  const BUILD = '2026-10-10 21:21 UTC';
+  const BUILD = '2026-10-10 21:53 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -780,6 +794,10 @@ html.tv .credit{padding-bottom:5vh}
       return c;
     });
     streamUrls.set(type + '/' + id, urls);
+    if (useOwn()) {                       // no DTS / TrueHD-only versions where the TV cannot decode them, unless nothing else exists
+      const ok = streams.filter(x => !badSound(x));
+      if (ok.length) return { streams: ok };
+    }
     return { streams: streams };
   }
 
@@ -832,6 +850,99 @@ html.tv .credit{padding-bottom:5vh}
     const back = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', back); bar.remove(); } };
     setTimeout(() => document.addEventListener('visibilitychange', back), 500);
   }
+
+  // ---------- the player inside Atrium (televisions that cannot run VLC) ----------
+  // Samsung and LG televisions have no VLC. There, and wherever it is chosen in the settings, the video plays in the
+  // page itself. The position is written back to Stremio, so Continue watching follows on every device.
+  const playerPref = () => { const v = String(mem.get('atrium.m.player', 'auto')); return v === 'vlc' || v === 'own' ? v : 'auto'; };
+  const useOwn = () => { const v = playerPref(); return v === 'own' || (v === 'auto' && isTV && !isAndroid); };
+  // What these televisions cannot decode: DTS and TrueHD sound. A version with only that plays without sound, so it is not offered
+  // when another version exists.
+  const badSound = s => { const t = ((s.name || '') + ' ' + (s.title || '') + ' ' + ((s.behaviorHints && s.behaviorHints.filename) || '')); return /DTS|TrueHD/i.test(t) && !/DD\+|DDP|EAC3|E-AC-3|AC3|\bAAC|DD5/i.test(t); };
+  const fmtTime = t => { t = Math.max(0, Math.floor(t || 0)); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), x = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  let ownOpen = false;
+  async function ownPlay(type, videoId, url, name) {
+    if (ownOpen) return;
+    ownOpen = true;
+    const root = rootId(videoId), back = document.activeElement;
+    let item = null, start = 0;
+    try {
+      const got = await timeout(stremio('datastoreGet', { authKey: stremioKey(), collection: 'libraryItem', ids: [root], all: false }), 3000);
+      item = got && Array.isArray(got.result) ? (got.result.find(x => x && x._id === root) || null) : null;
+    } catch (e) {}
+    if (item && item.state && +item.state.timeOffset > 5000 && (item.state.video_id === videoId || (type === 'movie' && (!item.state.video_id || item.state.video_id === root)))) start = item.state.timeOffset / 1000;
+
+    const box = document.createElement('div');
+    box.id = 'vp';
+    box.innerHTML = '<video playsinline autoplay></video><div class="vtop"><b></b></div><div class="vmsg"></div>' +
+      '<div class="vbar"><div class="vrail"><i></i></div><div class="vrow"><span class="vt">0:00</span><span class="vkeys">OK pause · ◀ ▶ 10 s · ▲ ▼ 1 min · Back close</span><span class="vd">0:00</span></div></div>';
+    document.body.appendChild(box);
+    const v = box.querySelector('video'), msg = box.querySelector('.vmsg'), bar = box.querySelector('.vbar'), top = box.querySelector('.vtop');
+    top.querySelector('b').textContent = name || '';
+    let hideTimer = 0, closed = false, savedAt = 0, lastTick = Date.now(), started = false, deaf = false;
+    const show = () => { box.classList.add('ui'); clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!v.paused) box.classList.remove('ui'); }, 4500); };
+    const say = t => { msg.textContent = t || ''; msg.classList.toggle('on', !!t); };
+    const save = async (ended) => {
+      const dur = isFinite(v.duration) ? v.duration : 0, pos = v.currentTime || 0, now = new Date().toISOString();
+      if (!started || (!ended && pos < 3)) return;
+      const done = ended || (dur > 0 && pos >= dur * 0.92);
+      const played = Math.max(0, Math.min(60000, Date.now() - lastTick)); lastTick = Date.now();
+      const old = item && item.state && typeof item.state === 'object' ? item.state : {};
+      const base = item || { _id: root, name: name || root, type: type, poster: /^tt/.test(root) ? 'https://images.metahub.space/poster/small/' + root + '/img' : null, posterShape: 'poster',
+        removed: true, temp: true, _ctime: now, behaviorHints: { defaultVideoId: null, featuredVideoId: null, hasScheduledVideos: false } };
+      const st = Object.assign({ timeWatched: 0, overallTimeWatched: 0, timesWatched: 0, flaggedWatched: 0, watched: '', noNotif: false }, old, {
+        video_id: videoId, lastWatched: now, timeOffset: done ? 0 : Math.round(pos * 1000), duration: Math.round(dur * 1000) || old.duration || 0,
+        timeWatched: (+old.timeWatched || 0) + played, overallTimeWatched: (+old.overallTimeWatched || 0) + played });
+      if (done) { st.timesWatched = (+old.timesWatched || 0) + 1; if (type === 'movie') st.flaggedWatched = 1; }
+      const next = Object.assign({}, base, { _mtime: now, state: st });
+      try { const r = await putLibrary(next); if (!r || !r.error) item = next; } catch (e) {}
+    };
+    const close = async (ended) => {
+      if (closed) return; closed = true;
+      clearTimeout(hideTimer);
+      window.removeEventListener('keydown', onKey, true);
+      try { v.pause(); } catch (e) {}
+      await timeout(save(ended), 2500);
+      v.removeAttribute('src'); try { v.load(); } catch (e) {}
+      box.remove(); ownOpen = false;
+      try { if (back && back.isConnected) back.focus({ preventScroll: true }); } catch (e) {}
+    };
+    const jump = d => { const dur = isFinite(v.duration) ? v.duration : 1e9; v.currentTime = Math.min(Math.max(0, v.currentTime + d), Math.max(0, dur - 1)); show(); };
+    const toggle = () => { if (v.paused) v.play().catch(() => {}); else v.pause(); show(); };
+    const onKey = ev => {
+      const k = ev.key, kc = ev.keyCode || ev.which;
+      let did = true;
+      if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack' || k === 'XF86Back' || k === 'MediaStop' || kc === 10009 || kc === 461 || kc === 413 || kc === 4) close(false);
+      else if (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || kc === 415 || kc === 19 || kc === 10252) toggle();
+      else if (k === 'ArrowRight' || k === 'MediaFastForward' || kc === 417) jump(10);
+      else if (k === 'ArrowLeft' || k === 'MediaRewind' || kc === 412) jump(-10);
+      else if (k === 'ArrowUp') jump(60);
+      else if (k === 'ArrowDown') jump(-60);
+      else did = false;
+      if (did) { ev.preventDefault(); ev.stopImmediatePropagation(); } else if (ev.key !== 'Shift' && ev.key !== 'Control') { ev.stopImmediatePropagation(); show(); }
+    };
+    window.addEventListener('keydown', onKey, true);
+    box.addEventListener('click', () => { toggle(); });
+    v.addEventListener('timeupdate', () => {
+      const dur = isFinite(v.duration) ? v.duration : 0;
+      box.querySelector('.vrail i').style.width = (dur ? Math.min(100, v.currentTime / dur * 100) : 0) + '%';
+      box.querySelector('.vt').textContent = fmtTime(v.currentTime); box.querySelector('.vd').textContent = fmtTime(dur);
+      if (!deaf && v.currentTime > 4 && typeof v.webkitAudioDecodedByteCount === 'number' && v.webkitAudioDecodedByteCount === 0 && !v.muted) {
+        deaf = true; say('No sound: this version\'s audio format cannot be played on this TV. Press Back, then pick another version.'); show();
+      }
+      if (Date.now() - savedAt > 20000 && !v.paused) { savedAt = Date.now(); save(false); }
+    });
+    v.addEventListener('playing', () => { say(''); if (!started) { started = true; lastTick = Date.now(); savedAt = Date.now(); setTimeout(() => save(false), 4000); } show(); });
+    v.addEventListener('waiting', () => say('Loading…'));
+    v.addEventListener('pause', () => { show(); save(false); });
+    v.addEventListener('ended', () => close(true));
+    v.addEventListener('error', () => { say('This TV could not play this version (its picture or sound format is not supported). Press Back, then pick another version from the info page.'); box.classList.add('ui'); });
+    v.addEventListener('loadedmetadata', () => { if (start > 0 && isFinite(v.duration) && start < v.duration - 30) { try { v.currentTime = Math.max(0, start - 5); } catch (e) {} } });
+    say('Loading…'); show();
+    v.src = url;
+    v.play().catch(() => {});
+  }
+
   // Tests replace this one to see what would be opened.
   window.AtriumOpen = href => { location.href = href; };
   async function playStream(q, body) {
@@ -842,6 +953,7 @@ html.tv .credit{padding-bottom:5vh}
     if (!/^https:\/\/[A-Za-z0-9.\-]+\//.test(url) || /["\s]/.test(url)) return { ok: false, error: 'bad address' };
     let name = '';
     try { name = String(JSON.parse(body || '{}').name || ''); } catch (e) {}
+    if (useOwn()) { ownPlay(type, id, url, name); return { ok: true }; }
     try { await timeout(noteStarted(type, id, name), 2500); } catch (e) {}
     const href = playerLink(url);
     showOpenBar(href, url);
@@ -1141,7 +1253,7 @@ html.tv .credit{padding-bottom:5vh}
       (signed && !isTV ? '<h3>Sign in a TV <small>type the code the TV shows, and this phone signs it in</small></h3><label>Code on the TV<input id="suTv" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH"></label><button class="btn more" id="suTvSend">Send sign-in to the TV</button>' : '') +
       '<h3>Picture</h3>' +
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
-      '<h3>Player</h3><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
+      '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (VLC, or Atrium\'s own player on a Samsung or LG TV)</option><option value="vlc">VLC</option><option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
       '<div class="msg" id="suMsg"></div>' +
@@ -1149,10 +1261,12 @@ html.tv .credit{padding-bottom:5vh}
     document.body.appendChild(box);
     const $ = s => box.querySelector(s), say = (t, bad) => { const m = $('#suMsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
+    $('#suPlayer').value = playerPref();
     const saveSmall = () => {
       const t = $('#suTmdb').value.trim();
       if (t) { if (!/^[A-Za-z0-9._\-]{20,}$/.test(t)) { say('That TMDB key does not look right.', true); return false; } mem.set(K.tmdb, t); }
       mem.set(K.max, $('#suMax').value);
+      mem.set('atrium.m.player', $('#suPlayer').value);
       return true;
     };
     $('#suLogin').onclick = async () => {
@@ -2360,7 +2474,7 @@ async function start(type, id, n, info, stream) {
   info = info || {};
   if (cast.tv) { castPlay(type, id, info, n, stream); return; }
   launch.show(info, id);
-  launch.status('Opening VLC…', stream ? quality(stream) : '');
+  launch.status('Starting the player…', stream ? quality(stream) : '');
   try {
     const at = info.start > 5 ? '&t=' + Math.floor(info.start) : '';
     const r = await local('/api/play?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id) + '&n=' + n + at, { method: 'POST', body: JSON.stringify({ name: info.name || '', sub: info.sub || '' }) });
@@ -3450,7 +3564,7 @@ async function download(type, id, info, stream) {
 }
 async function playFile(id, info) {
   launch.show(info, id);
-  launch.status('Opening VLC…', 'Playing your download');
+  launch.status('Starting the player…', 'Playing your download');
   try {
     const at = info && info.start > 5 ? '&t=' + Math.floor(info.start) : '';
     const r = await local('/api/playfile?key=' + encodeURIComponent(id) + at, { method: 'POST', body: '{}' });
