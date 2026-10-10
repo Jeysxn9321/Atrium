@@ -575,9 +575,50 @@ html.seen #intro{display:none}
   // ---------- what this device remembers ----------
   const mem = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
-    set(k, v) { try { if (v == null || v === '') localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
+    set(k, v) { try { if (v == null || v === '') localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} copy.put(k, v); },
     json(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   };
+  // The keys are also kept in IndexedDB, a second place on the device. If the browser empties
+  // one of them (it does that to sites it thinks are unused) the other brings the sign-in back.
+  const copy = {
+    keys: ['atrium.m.stremio', 'atrium.m.tmdb', 'atrium.m.max'],
+    open() {
+      return new Promise((res, rej) => {
+        try {
+          const r = indexedDB.open('atrium', 1);
+          r.onupgradeneeded = () => r.result.createObjectStore('kv');
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+        } catch (e) { rej(e); }
+      });
+    },
+    async put(k, v) {
+      if (this.keys.indexOf(k) < 0) return;
+      try {
+        const db = await this.open();
+        const st = db.transaction('kv', 'readwrite').objectStore('kv');
+        if (v == null || v === '') st.delete(k); else st.put(String(v), k);
+      } catch (e) {}
+    },
+    async restore() {
+      let back = false;
+      try {
+        const db = await this.open();
+        for (const k of this.keys) {
+          if (localStorage.getItem(k)) continue;
+          const v = await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); });
+          if (v) { localStorage.setItem(k, v); back = true; }
+        }
+      } catch (e) {}
+      return back;
+    }
+  };
+  // Asks the browser not to clear this site's storage. Safari decides by itself, and says yes
+  // more readily to a site opened from the Home Screen.
+  const keepStorage = () => { try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} };
+  keepStorage();
+  // whatever was typed before this version is written to the second place as well
+  copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -602,7 +643,16 @@ html.seen #intro{display:none}
   async function getLibrary() {
     const k = stremioKey();
     if (!k) return { result: [], nokey: true };
-    return stremio('datastoreGet', { authKey: k, collection: 'libraryItem', ids: [], all: true });
+    const j = await stremio('datastoreGet', { authKey: k, collection: 'libraryItem', ids: [], all: true });
+    // Stremio ended this sign-in (the password was changed, or "log out everywhere" was used).
+    // Only then is the sign-in asked for again.
+    const why = j && j.error && String(j.error.message || j.error);
+    if (why && /session|auth|token|logged|expired/i.test(why)) {
+      mem.set(K.stremio, '');
+      setTimeout(() => openSettings(true, 'Stremio ended this sign-in. Sign in again, once.'), 0);
+      return { result: [], nokey: true };
+    }
+    return j;
   }
   async function putLibrary(item) {
     const k = stremioKey();
@@ -933,7 +983,7 @@ html.seen #intro{display:none}
 
   // ---------- settings ----------
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  function openSettings(first) {
+  function openSettings(first, notice) {
     let box = document.getElementById('setup');
     if (box) box.remove();
     const signed = !!stremioKey(), standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -941,7 +991,9 @@ html.seen #intro{display:none}
     box.id = 'setup';
     box.innerHTML = '<div class="card">' +
       '<h2>' + (first ? 'Welcome to Atrium' : 'Settings') + '</h2>' +
-      (first ? '<p>Sign in once on this device. Your library, My list and your TorBox add-on come from your Stremio account.</p>' : '') +
+      (notice ? '<p class="hint">' + esc(notice) + '</p>' : '') +
+      (first ? '<p>Sign in once on this device: it stays signed in. Your library, My list and your TorBox add-on come from your Stremio account.</p>' : '') +
+      (first && isIOS && !standalone ? '<p class="hint">On iPhone, first tap Share, then <b>Add to Home Screen</b>, then open Atrium from the Home Screen and sign in there. Safari and the Home Screen app keep their sign-ins apart, so signing in inside the Home Screen app is the one that lasts.</p>' : '') +
       '<h3>Stremio account' + (signed ? ' <span class="okmark">signed in</span>' : '') + '</h3>' +
       (signed ? '<details><summary>Sign in with another account</summary>' : '') +
       '<label>Email<input id="suMail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>' +
@@ -955,7 +1007,7 @@ html.seen #intro{display:none}
       '<h3>Picture</h3>' +
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<h3>Player</h3><p>Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.</p>' +
-      (isIOS && !standalone ? '<p class="hint">To install Atrium: tap Share in Safari, then <b>Add to Home Screen</b>.</p>' : '') +
+      (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       '<div class="msg" id="suMsg"></div>' +
       '<div class="foot">' + (signed ? '<button class="btn more" id="suOut">Sign out</button>' : '') + '<button class="btn play" id="suDone">Save</button></div></div>';
     document.body.appendChild(box);
@@ -976,10 +1028,12 @@ html.seen #intro{display:none}
         const k = j && j.result && j.result.authKey;
         if (!k) { say((j && j.error && (j.error.message || j.error)) || 'Stremio refused the sign-in.', true); return; }
         mem.set(K.stremio, k);
+        keepStorage();
         if (saveSmall()) location.reload();
       } catch (e) { say('Stremio did not answer. Check the connection, or paste a sign-in key instead.', true); }
     };
     $('#suDone').onclick = () => {
+      keepStorage();
       const k = $('#suKey').value.trim(), before = mem.get(K.stremio, '') + '|' + mem.get(K.tmdb, '') + '|' + mem.get(K.max, '');
       if ($('#suMail').value.trim() && $('#suPass').value) { $('#suLogin').click(); return; }      // an email and password were typed: sign in with them
       if (k) { if (!/^[A-Za-z0-9+/=_\-]{8,}$/.test(k)) { say('That Stremio key does not look right.', true); return; } mem.set(K.stremio, k); }
@@ -1002,7 +1056,9 @@ html.seen #intro{display:none}
       b.onclick = () => openSettings(false);
       top.appendChild(b);
     }
-    if (!stremioKey()) openSettings(true);
+    if (!stremioKey()) {
+      copy.restore().then(back => { if (back && stremioKey()) location.reload(); else openSettings(true); });
+    }
 
     // Back (the swipe from the edge on a phone, the Back key of a remote) closes an open info page.
     const veil = document.getElementById('veil');
