@@ -946,11 +946,10 @@ html.seen #intro{display:none}
       (signed ? '<details><summary>Sign in with another account</summary>' : '') +
       '<label>Email<input id="suMail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false"></label>' +
       '<label>Password<input id="suPass" type="password" autocomplete="current-password"></label>' +
-      '<button class="btn play" id="suLogin">Sign in</button>' +
+      '<button class="btn more" id="suLogin">Sign in with email</button>' +
       (signed ? '</details>' : '') +
       '<details><summary>' + (signed ? 'Paste another sign-in key' : 'Or paste a sign-in key') + '</summary>' +
-      '<label>Key (the content of stremio-key.txt)<input id="suKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>' +
-      '<button class="btn more" id="suKeySave">Use this key</button></details>' +
+      '<label>Key (the content of stremio-key.txt)<input id="suKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label></details>' +
       '<h3>TMDB key <small>optional: more trailers and the newest episodes</small></h3>' +
       '<label>Key (the content of tmdb-key.txt)<input id="suTmdb" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' + (tmdbKey() ? 'saved' : '') + '"></label>' +
       '<h3>Picture</h3>' +
@@ -958,7 +957,7 @@ html.seen #intro{display:none}
       '<h3>Player</h3><p>Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.</p>' +
       (isIOS && !standalone ? '<p class="hint">To install Atrium: tap Share in Safari, then <b>Add to Home Screen</b>.</p>' : '') +
       '<div class="msg" id="suMsg"></div>' +
-      '<div class="foot">' + (signed ? '<button class="btn more" id="suOut">Sign out</button>' : '') + '<button class="btn play" id="suDone">' + (signed ? 'Done' : 'Later') + '</button></div></div>';
+      '<div class="foot">' + (signed ? '<button class="btn more" id="suOut">Sign out</button>' : '') + '<button class="btn play" id="suDone">Save</button></div></div>';
     document.body.appendChild(box);
     const $ = s => box.querySelector(s), say = (t, bad) => { const m = $('#suMsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
@@ -980,13 +979,13 @@ html.seen #intro{display:none}
         if (saveSmall()) location.reload();
       } catch (e) { say('Stremio did not answer. Check the connection, or paste a sign-in key instead.', true); }
     };
-    $('#suKeySave').onclick = () => {
-      const k = $('#suKey').value.trim();
-      if (!/^[A-Za-z0-9+/=_\-]{8,}$/.test(k)) { say('That key does not look right.', true); return; }
-      mem.set(K.stremio, k);
-      if (saveSmall()) location.reload();
+    $('#suDone').onclick = () => {
+      const k = $('#suKey').value.trim(), before = mem.get(K.stremio, '') + '|' + mem.get(K.tmdb, '') + '|' + mem.get(K.max, '');
+      if ($('#suMail').value.trim() && $('#suPass').value) { $('#suLogin').click(); return; }      // an email and password were typed: sign in with them
+      if (k) { if (!/^[A-Za-z0-9+/=_\-]{8,}$/.test(k)) { say('That Stremio key does not look right.', true); return; } mem.set(K.stremio, k); }
+      if (!saveSmall()) return;
+      if (before !== mem.get(K.stremio, '') + '|' + mem.get(K.tmdb, '') + '|' + mem.get(K.max, '')) location.reload(); else box.remove();
     };
-    $('#suDone').onclick = () => { const before = mem.get(K.tmdb, '') + '|' + mem.get(K.max, ''); if (!saveSmall()) return; box.remove(); if (before !== mem.get(K.tmdb, '') + '|' + mem.get(K.max, '')) location.reload(); };
     const out = $('#suOut');
     if (out) out.onclick = () => { mem.set(K.stremio, ''); mem.set(K.tmdb, ''); location.reload(); };
   }
