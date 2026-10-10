@@ -708,7 +708,7 @@ html.tv .credit{padding-bottom:5vh}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-10 22:29 UTC';
+  const BUILD = '2026-10-10 22:52 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -912,6 +912,8 @@ html.tv .credit{padding-bottom:5vh}
       if (closed) return; closed = true;
       clearTimeout(hideTimer);
       window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('fullscreenchange', onFull);
+      try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
       try { v.pause(); } catch (e) {}
       await timeout(save(ended), 2500);
       v.removeAttribute('src'); try { v.load(); } catch (e) {}
@@ -933,6 +935,12 @@ html.tv .credit{padding-bottom:5vh}
       if (did) { ev.preventDefault(); ev.stopImmediatePropagation(); } else if (ev.key !== 'Shift' && ev.key !== 'Control') { ev.stopImmediatePropagation(); show(); }
     };
     window.addEventListener('keydown', onKey, true);
+    // full screen, so a browser's bars do not stay around the picture; leaving full screen (the browser's own Back) closes the player
+    let wentFull = false;
+    const onFull = () => { if (wentFull && !document.fullscreenElement) close(false); };
+    try {
+      if (box.requestFullscreen && !document.fullscreenElement) { box.requestFullscreen().then(() => { wentFull = true; document.addEventListener('fullscreenchange', onFull); }).catch(() => {}); }
+    } catch (e) {}
     box.addEventListener('click', () => { toggle(); });
     v.addEventListener('timeupdate', () => {
       const dur = isFinite(v.duration) ? v.duration : 0;
@@ -1351,6 +1359,8 @@ html.tv .credit{padding-bottom:5vh}
     (target || document.activeElement || document.body).dispatchEvent(ev);
     return ev;
   }
+  // installed as a Samsung app, the remote's media keys only reach the page once they are asked for
+  try { if (window.tizen && tizen.tvinputdevice) ['MediaPlay', 'MediaPause', 'MediaPlayPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'ColorF0Red'].forEach(n => { try { tizen.tvinputdevice.registerKey(n); } catch (e) {} }); } catch (e) {}
   window.addEventListener('keydown', ev => {
     if (ev.__atrium) return;
     const kc = ev.keyCode || ev.which, k = ev.key;
@@ -1359,7 +1369,7 @@ html.tv .credit{padding-bottom:5vh}
     if ((back || k === 'Escape') && setup && !setup.dataset.first) { ev.preventDefault(); ev.stopImmediatePropagation(); setup.remove(); return; }
     if (!isTV) return;
     if (back) {
-      if (!something()) return;                    // nothing to close: the television's own Back (leave the app) applies
+      if (!something()) { try { if (window.tizen && tizen.application) tizen.application.getCurrentApplication().exit(); } catch (e) {} return; }      // nothing to close: leave the app (an installed Samsung app), or the television's own Back applies
       ev.preventDefault(); ev.stopImmediatePropagation();
       const e2 = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }); e2.__atrium = 1;
       (document.activeElement || document.body).dispatchEvent(e2);
