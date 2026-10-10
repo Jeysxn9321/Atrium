@@ -400,6 +400,8 @@ html.seen #intro{display:none}
 #setup summary{font-size:1.25rem;color:var(--dim);margin:1.4rem 0 1rem;cursor:pointer}
 #setup .btn{justify-content:center}
 #setup .foot{display:flex;gap:1rem;justify-content:flex-end;margin-top:2rem}
+#setup .ver{font-size:1.05rem;color:var(--faint);margin:1.4rem 0 0}
+#setup .ver a{color:var(--dim);text-decoration:underline}
 #setup .msg{min-height:1.8rem;font-size:1.25rem;color:var(--dim);margin-top:1rem}
 #setup .msg.bad{color:#ff8a8a}
 #setup .okmark{font-size:1.05rem;font-weight:600;color:#7ee0a1;border:1px solid #7ee0a166;border-radius:2rem;padding:.1rem .8rem;margin-left:.6rem;vertical-align:middle}
@@ -679,6 +681,7 @@ html.tv .credit{padding-bottom:5vh}
   keepStorage();
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
+  const BUILD = '2026-10-10 20:55 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1078,6 +1081,7 @@ html.tv .credit{padding-bottom:5vh}
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<h3>Player</h3><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
+      '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
       '<div class="msg" id="suMsg"></div>' +
       '<div class="foot">' + (signed ? '<button class="btn more" id="suOut">Sign out</button>' : '') + '<button class="btn play" id="suDone">Save</button></div></div>';
     document.body.appendChild(box);
@@ -1110,6 +1114,7 @@ html.tv .credit{padding-bottom:5vh}
       if (!saveSmall()) return;
       if (before !== mem.get(K.stremio, '') + '|' + mem.get(K.tmdb, '') + '|' + mem.get(K.max, '')) location.reload(); else box.remove();
     };
+    $('#suReload').onclick = ev => { ev.preventDefault(); location.replace(location.pathname + '?r=' + Date.now()); };
     const out = $('#suOut');
     if (out) out.onclick = () => { mem.set(K.stremio, ''); mem.set(K.tmdb, ''); location.reload(); };
   }
