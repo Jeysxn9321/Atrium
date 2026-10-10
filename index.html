@@ -681,10 +681,22 @@ html.tv .credit{padding-bottom:5vh}
   keepStorage();
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
-  const BUILD = '2026-10-10 20:55 UTC';
+  const BUILD = '2026-10-10 21:02 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
+  // a sign-in key handed over in the address: .../Atrium/#key=...  (and optionally &tmdb=...). The part after # never
+  // leaves the device; it is stored and taken out of the address at once.
+  try {
+    const h = location.hash || '', mk = /[#&]key=([^&]+)/.exec(h), mt = /[#&]tmdb=([^&]+)/.exec(h);
+    if (mk || mt) {
+      const k = mk ? decodeURIComponent(mk[1]).trim() : '', t = mt ? decodeURIComponent(mt[1]).trim() : '';
+      if (/^[A-Za-z0-9+/=_\-]{8,}$/.test(k)) mem.set(K.stremio, k);
+      if (/^[A-Za-z0-9._\-]{20,}$/.test(t)) mem.set(K.tmdb, t);
+      history.replaceState(null, '', location.pathname + location.search);
+      try { keepStorage(); } catch (e) {}
+    }
+  } catch (e) {}
   // the page goes full screen on the first click on a PC; a phone or a television app already is
   try { localStorage.setItem('jey.full', 'false'); } catch (e) {}
 
