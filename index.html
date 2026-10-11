@@ -619,6 +619,12 @@ html.tv .strip{scroll-behavior:auto}
 html.tv #sheet{box-shadow:none;animation:none}
 html.tv .card:focus-visible{box-shadow:0 0 0 .3rem #fff}
 html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
+
+/* ---------- touch screens: no big blurred layers (they take a lot of a phone's memory; Safari restarts the page when it runs out) ---------- */
+@media (hover: none) {
+  #hero .glow,#launch .glow{display:none}
+  #castMenu{backdrop-filter:none;-webkit-backdrop-filter:none}
+}
 </style>
 </head>
 <body>
@@ -722,7 +728,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 01:15 UTC';
+  const BUILD = '2026-10-11 01:41 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -753,9 +759,10 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return /Tizen|SMART-TV|SmartTV|Web0S|WebOS|NetCast|HbbTV|BRAVIA|CrKey|AFT[A-Z]+|Android.*\bTV\b|Roku/i.test(ua);
   })();
   if (isTV) document.documentElement.classList.add('tv');
+  // A phone or a tablet has little memory for a page and a YouTube frame at once (Safari restarts the page when it runs out): trailers behind the banner start off there too.
+  try { if (localStorage.getItem('jey.trailers') === null && (isTV || (window.matchMedia && matchMedia('(hover: none)').matches))) localStorage.setItem('jey.trailers', 'false'); } catch (e) {}
   if (isTV) {
-    // A television's chip is slow: trailers behind the banner start off (Shift+T on a keyboard turns them on), and the page moves in one step instead of animating.
-    try { if (localStorage.getItem('jey.trailers') === null) localStorage.setItem('jey.trailers', 'false'); } catch (e) {}
+    // A television's chip is slow: the page moves in one step instead of animating.
     try {
       const si = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function (o) { return si.call(this, o && typeof o === 'object' ? Object.assign({}, o, { behavior: 'auto' }) : o); };
       const st = window.scrollTo.bind(window); window.scrollTo = function (a, b) { return a && typeof a === 'object' ? st(Object.assign({}, a, { behavior: 'auto' })) : st(a, b); };
@@ -1306,6 +1313,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       (signed && !isTV ? '<h3>Sign in a TV <small>type the code the TV shows, and this phone signs it in</small></h3><label>Code on the TV<input id="suTv" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH"></label><button class="btn more" id="suTvSend">Send sign-in to the TV</button>' : '') +
       '<h3>Picture</h3>' +
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
+      '<label>Trailers behind the banner<select id="suTrail"><option value="1">On</option><option value="0">Off (lighter, steadier on a phone or TV)</option></select></label>' +
       '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (VLC, or Atrium\'s own player on a Samsung or LG TV)</option><option value="vlc">VLC</option><option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
@@ -1315,11 +1323,13 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const $ = s => box.querySelector(s), say = (t, bad) => { const m = $('#suMsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
     $('#suPlayer').value = playerPref();
+    try { $('#suTrail').value = JSON.parse(localStorage.getItem('jey.trailers') || 'true') === false ? '0' : '1'; } catch (e) {}
     const saveSmall = () => {
       const t = $('#suTmdb').value.trim();
       if (t) { if (!/^[A-Za-z0-9._\-]{20,}$/.test(t)) { say('That TMDB key does not look right.', true); return false; } mem.set(K.tmdb, t); }
       mem.set(K.max, $('#suMax').value);
       mem.set('atrium.m.player', $('#suPlayer').value);
+      try { localStorage.setItem('jey.trailers', $('#suTrail').value === '0' ? 'false' : 'true'); } catch (e) {}
       return true;
     };
     $('#suLogin').onclick = async () => {
@@ -1429,8 +1439,13 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       b.onclick = () => openSettings(false);
       top.appendChild(b);
     }
+    if (stremioKey()) { try { sessionStorage.removeItem('atrium.rl'); } catch (e) {} }
     if (!stremioKey()) {
-      copy.restore().then(back => { if (back && stremioKey()) location.reload(); else openSettings(true); });
+      // a sign-in kept in the second place comes back with one reload, never a loop of them
+      copy.restore().then(back => {
+        let again = false; try { again = sessionStorage.getItem('atrium.rl') === '1'; sessionStorage.setItem('atrium.rl', '1'); } catch (e) {}
+        if (back && stremioKey() && !again) location.reload(); else openSettings(true);
+      });
     }
 
     // Back (the swipe from the edge on a phone, the Back key of a remote) closes an open info page.
