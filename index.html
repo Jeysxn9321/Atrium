@@ -473,7 +473,7 @@ html.tv .card:focus-visible{box-shadow:0 1rem 2.4rem #000c,0 0 0 .3rem #fff}
 html.tv button:focus-visible,html.tv summary:focus-visible,html.tv select:focus-visible,html.tv #setup input:focus{outline:.3rem solid #fff;outline-offset:.3rem}
 html.tv .chip:focus-visible,html.tv .ep:focus-visible,html.tv .v:focus-visible{outline:.3rem solid #fff;outline-offset:-.1rem}
 html.tv #setup .ver a{display:block;margin-top:.8rem;padding:.9rem 1rem;background:var(--panel2);border-radius:.6rem;text-align:center;font-size:1.3rem;color:#fff;text-decoration:none}
-html.tv #setup a:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
+html.tv #openBar a:focus-visible,html.tv #setup a:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
 html.tv .ep .ver:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
 html.tv #setup{padding-left:var(--pad);padding-right:var(--pad)}
 html.tv #setup .panel{width:min(100%,62rem)}
@@ -749,7 +749,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 14:56 UTC';
+  const BUILD = '2026-10-11 15:10 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1549,8 +1549,10 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   }
   // Leave the app. An installed Samsung app can quit itself; anywhere else (the Android TV app, a Samsung hosted app) only the
   // television's own Back key can, so the question tells to press Back, and that Back is let through.
+  const isTizenUA = /Tizen|SMART-TV/i.test(navigator.userAgent);
   function tvExit() {
-    try { if (window.tizen && tizen.application) tizen.application.getCurrentApplication().exit(); } catch (e) {}
+    try { if (window.tizen && tizen.application) { tizen.application.getCurrentApplication().exit(); return; } } catch (e) {}
+    if (isTizenUA) { try { window.close(); } catch (e) {} }
   }
   function exitAsk() {
     if (document.getElementById('exitDlg')) return;
@@ -1559,7 +1561,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     d.innerHTML = '<div style="background:#1b1b22;border-radius:1rem;padding:2.2rem 3rem;text-align:center;max-width:40rem"><div style="font-size:2rem;font-weight:700;margin-bottom:.6rem">Exit Atrium?</div><div class="exs" style="font-size:1.25rem;color:#bbb;margin-bottom:1.6rem">Choose Exit, or Cancel to stay.</div><div style="display:flex;gap:1.2rem;justify-content:center"><button class="btn" id="exitYes">Exit</button><button class="btn more" id="exitNo">Cancel</button></div></div>';
     document.body.appendChild(d);
     document.getElementById('exitNo').onclick = () => d.remove();
-    document.getElementById('exitYes').onclick = () => { tvExit(); const s = d.querySelector('.exs'); if (s) s.textContent = 'Press the Back button once more to leave Atrium.'; };
+    document.getElementById('exitYes').onclick = () => {
+      tvExit();
+      // still here a moment later: this app cannot close itself
+      setTimeout(() => { const s = d.querySelector('.exs'); if (s && d.isConnected) s.textContent = isTizenUA ? 'This app cannot close itself here: press the Home button on your remote to leave.' : 'Press the Back button once more to leave Atrium.'; }, 700);
+    };
     document.getElementById('exitYes').focus();
   }
   function press(key, target) {
@@ -1579,7 +1585,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const dlg = document.getElementById('exitDlg');
     if (dlg) {
       // the "Exit Atrium?" question: arrows pick, OK chooses, Back leaves
-      if (back) { tvExit(); return; }
+      if (back) { tvExit(); if (isTizenUA) { ev.preventDefault(); ev.stopImmediatePropagation(); const s = dlg.querySelector('.exs'); if (s) s.textContent = 'This app cannot close itself here: press the Home button on your remote to leave.'; } return; }
       const btns = [].slice.call(dlg.querySelectorAll('button')), at = btns.indexOf(document.activeElement);
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); ev.stopImmediatePropagation(); btns[at === 0 ? 1 : 0].focus(); return; }
       if (k === 'Enter' || kc === 13) { ev.preventDefault(); ev.stopImmediatePropagation(); (btns[at] || btns[0]).click(); return; }
@@ -2695,6 +2701,9 @@ function score(s) {
   if (/hdr|dolby vision|\bdv\b/.test(t)) v += 40;
   if (/remux/.test(t)) v += 25; else if (/blu-?ray|bdrip|brrip/.test(t)) v += 15; else if (/web-?dl|webrip/.test(t)) v += 10;
   if (/\b3d\b/.test(t)) v -= 500;
+  { const lm = (String((s.behaviorHints || {}).filename || '') + ' ' + name + ' ' + String(s.title || '')).toLowerCase().match(/\[((?:eng|en|hin|hi|tam|tel|mal|kan|ben|jpn|jap|kor|chi|zho|rus|ger|deu|fre|fra|spa|ita|por|tur|ara|pol|ukr|tha|vie|ind)(?:\s*[,+&\/-]\s*(?:eng|en|hin|hi|tam|tel|mal|kan|ben|jpn|jap|kor|chi|zho|rus|ger|deu|fre|fra|spa|ita|por|tur|ara|pol|ukr|tha|vie|ind))+)\]/);
+    if (lm) { if (!/^(en|eng)$/.test(lm[1].split(/[,+&\/-]/)[0].trim())) v -= 2000; }
+    else if (/dual[ ._-]?audio/.test(t)) v -= 150; }
   if (/\b(ita|ger|german|spa|latino|rus|hindi|pol|tur|por|dublado)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 150; else if (/\b(french|truefrench|vff|vfq|vf|vostfr)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 30; if (/\b(dubbed|english dub|dub)\b/.test(t) && !/\b(dual|multi)\b/.test(t)) v -= 30;
   v += Math.min(sizeGB(s), 60) / 3;
   return v;
@@ -3557,7 +3566,7 @@ function navScope() {
   return document.body;
 }
 function navItems(scope) {
-  return $$('button, input, select, summary, #setup a[href], .card, .ep, .v', scope).filter(e => {
+  return $$('button, input, select, summary, #setup a[href], #openBar a[href], .card, .ep, .v', scope).filter(e => {
     if (e.disabled || e.tabIndex < 0) return false;
     if (scope === document.body && e.closest('#veil, #catMenu, #peek, #launch')) return false;
     const card = e.closest('.card');
