@@ -708,7 +708,7 @@ html.tv .credit{padding-bottom:5vh}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-10 22:52 UTC';
+  const BUILD = '2026-10-11 01:10 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -946,7 +946,7 @@ html.tv .credit{padding-bottom:5vh}
       const dur = isFinite(v.duration) ? v.duration : 0;
       box.querySelector('.vrail i').style.width = (dur ? Math.min(100, v.currentTime / dur * 100) : 0) + '%';
       box.querySelector('.vt').textContent = fmtTime(v.currentTime); box.querySelector('.vd').textContent = fmtTime(dur);
-      if (!deaf && v.currentTime > 4 && typeof v.webkitAudioDecodedByteCount === 'number' && v.webkitAudioDecodedByteCount === 0 && !v.muted) {
+      if (!deaf && !/Tizen|SMART-TV/i.test(navigator.userAgent) && v.currentTime > 4 && typeof v.webkitAudioDecodedByteCount === 'number' && v.webkitAudioDecodedByteCount === 0 && !v.muted) {
         deaf = true; say('No sound: this version\'s audio format cannot be played on this TV. Press Back, then pick another version.'); show();
       }
       if (Date.now() - savedAt > 20000 && !v.paused) { savedAt = Date.now(); save(false); }
