@@ -747,7 +747,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 14:29 UTC';
+  const BUILD = '2026-10-11 14:44 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1539,6 +1539,27 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const q = document.getElementById('q');
     return on('peek') || on('launch') || on('catMenu') || on('veil') || !!document.getElementById('setup') || !!document.getElementById('vp') || !!(q && q.value);
   }
+  let lastBack = 0;
+  function hint(text) {
+    let h = document.getElementById('exitHint');
+    if (!h) { h = document.createElement('div'); h.id = 'exitHint'; h.style.cssText = 'position:fixed;left:50%;bottom:8%;transform:translateX(-50%);z-index:400;background:#000d;color:#fff;padding:.7rem 1.6rem;border-radius:.6rem;font-size:1.3rem;font-weight:600'; document.body.appendChild(h); }
+    h.textContent = text; clearTimeout(h._t); h._t = setTimeout(() => h.remove(), 2500);
+  }
+  // Leave the app. An installed Samsung app can quit itself; anywhere else (the Android TV app, a Samsung hosted app) only the
+  // television's own Back key can, so the question tells to press Back, and that Back is let through.
+  function tvExit() {
+    try { if (window.tizen && tizen.application) tizen.application.getCurrentApplication().exit(); } catch (e) {}
+  }
+  function exitAsk() {
+    if (document.getElementById('exitDlg')) return;
+    const d = document.createElement('div'); d.id = 'exitDlg';
+    d.style.cssText = 'position:fixed;inset:0;z-index:500;background:#000c;display:flex;align-items:center;justify-content:center';
+    d.innerHTML = '<div style="background:#1b1b22;border-radius:1rem;padding:2.2rem 3rem;text-align:center;max-width:40rem"><div style="font-size:2rem;font-weight:700;margin-bottom:.6rem">Exit Atrium?</div><div class="exs" style="font-size:1.25rem;color:#bbb;margin-bottom:1.6rem">Choose Exit, or Cancel to stay.</div><div style="display:flex;gap:1.2rem;justify-content:center"><button class="btn" id="exitYes">Exit</button><button class="btn more" id="exitNo">Cancel</button></div></div>';
+    document.body.appendChild(d);
+    document.getElementById('exitNo').onclick = () => d.remove();
+    document.getElementById('exitYes').onclick = () => { tvExit(); const s = d.querySelector('.exs'); if (s) s.textContent = 'Press the Back button once more to leave Atrium.'; };
+    document.getElementById('exitYes').focus();
+  }
   function press(key, target) {
     const ev = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
     (target || document.activeElement || document.body).dispatchEvent(ev);
@@ -1553,8 +1574,23 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const setup = document.getElementById('setup');
     if ((back || k === 'Escape') && setup && !setup.dataset.first) { ev.preventDefault(); ev.stopImmediatePropagation(); setup.remove(); return; }
     if (!isTV) return;
+    const dlg = document.getElementById('exitDlg');
+    if (dlg) {
+      // the "Exit Atrium?" question: arrows pick, OK chooses, Back leaves
+      if (back) { tvExit(); return; }
+      const btns = [].slice.call(dlg.querySelectorAll('button')), at = btns.indexOf(document.activeElement);
+      if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown') { ev.preventDefault(); ev.stopImmediatePropagation(); btns[at === 0 ? 1 : 0].focus(); return; }
+      if (k === 'Enter' || kc === 13) { ev.preventDefault(); ev.stopImmediatePropagation(); (btns[at] || btns[0]).click(); return; }
+      if (k === 'Escape') { ev.preventDefault(); ev.stopImmediatePropagation(); dlg.remove(); return; }
+      ev.preventDefault(); ev.stopImmediatePropagation(); return;
+    }
     if (back) {
-      if (!something()) { try { if (window.tizen && tizen.application) tizen.application.getCurrentApplication().exit(); } catch (e) {} return; }      // nothing to close: leave the app (an installed Samsung app), or the television's own Back applies
+      if (!something()) {
+        // nothing to close: the first Back says so, a second one soon after asks whether to leave
+        const now = Date.now();
+        if (now - lastBack < 3000) { lastBack = 0; ev.preventDefault(); ev.stopImmediatePropagation(); exitAsk(); return; }
+        lastBack = now; ev.preventDefault(); ev.stopImmediatePropagation(); hint('Press Back again to exit'); return;
+      }
       ev.preventDefault(); ev.stopImmediatePropagation();
       const e2 = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }); e2.__atrium = 1;
       (document.activeElement || document.body).dispatchEvent(e2);
