@@ -20,7 +20,7 @@
 <script src="$WEBAPIS/webapis/webapis.js"></script>
 <script>
 (function () {
-  var SAMPLE = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  var SAMPLE = 'https://jeysxn9321.github.io/Atrium/test-1080p.mp4';   // a 15 s 1080p H.264 test picture (a grid, a circle and a frame at the edges) with a tone
   var logEl = document.getElementById('log'), lines = [];
   function log(t) { lines.push(t); if (lines.length > 26) lines.shift(); logEl.textContent = lines.join('\n'); try { console.log(t); } catch (e) {} }
   function clear() { lines = []; logEl.textContent = ''; }
@@ -66,6 +66,9 @@
   function playAv() {
     if (!avp) { clear(); log('The Samsung player is not available to this page (webapis missing).'); log('The app config needs the avplay privilege, and the app must have been reinstalled.'); return; }
     stopAll(); mode = 'av'; document.body.className = ''; clear();
+    log('fetching ' + SAMPLE.replace('https://', ''));
+    try { fetch(SAMPLE, { method: 'HEAD' }).then(function (r) { log('network check: ' + r.status + ' ' + (r.headers.get('content-length') || '') + ' bytes'); }).catch(function (e) { log('network check failed: ' + e.message); }); } catch (e) {}
+    var guard = setTimeout(function () { if (mode === 'av') log('no answer from the player after 10 s (state: ' + safe(function () { return avp.getState(); }) + ')'); }, 10000);
     try {
       avp.open(SAMPLE);
       avp.setListener({
@@ -75,7 +78,8 @@
       });
       applyAv();
       avp.prepareAsync(function () {
-        log('prepared; starting');
+        clearTimeout(guard); log('prepared; starting (state ' + safe(function () { return avp.getState(); }) + ')');
+        try { log('video ' + avp.getCurrentStreamInfo().map(function (x) { var e = {}; try { e = JSON.parse(x.extra_info); } catch (q) {} return x.type + ' ' + (e.Width ? e.Width + 'x' + e.Height : '') + (e.fourCC ? ' ' + e.fourCC : ''); }).join(' · ')); } catch (e) {}
         try { var s = avp.getCurrentStreamInfo(); log('streams: ' + s.length); } catch (e) {}
         try { avp.play(); applyAv(); } catch (e) { log('play failed: ' + e.message); }
       }, function (e) { log('prepare failed: ' + e); });
