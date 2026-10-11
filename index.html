@@ -427,6 +427,8 @@ html.tv #setup .tvcode{font-size:7rem}
 #vp .vkeys{color:#fff9;font-size:1.25rem;text-align:center}
 #vp .vmsg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:70vw;text-align:center;font-size:2rem;line-height:1.4;background:#000b;border-radius:1rem;padding:1.6rem 2.4rem;opacity:0;transition:opacity .2s;pointer-events:none}
 #vp .vmsg.on{opacity:1}
+#vp .vnote{position:absolute;right:5vw;top:calc(env(safe-area-inset-top) + 3rem);font-size:1.8rem;background:#000b;border-radius:.8rem;padding:1rem 1.6rem;opacity:0;transition:opacity .2s;pointer-events:none}
+#vp .vnote.on{opacity:1}
 
 /* ---------- touch screens ---------- */
 @media (hover:none){
@@ -605,6 +607,18 @@ html.tv .credit{padding-bottom:5vh}
   #launch .st{font-size:1.3rem}
   #intro b{font-size:27vw}
 }
+
+/* ---------- television: lighter on the graphics chip (blurs, glass and big shadows are slow on a TV's processor) ---------- */
+html.tv *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html.tv img{filter:none!important}
+html.tv #hero .glow,html.tv #launch .glow{display:none}
+html.tv #hero .glow,html.tv #hero .art,html.tv #hero .info{animation:none}
+html.tv #intro{display:none}
+html.tv .skel{animation:none}
+html.tv .strip{scroll-behavior:auto}
+html.tv #sheet{box-shadow:none;animation:none}
+html.tv .card:focus-visible{box-shadow:0 0 0 .3rem #fff}
+html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
 </style>
 </head>
 <body>
@@ -708,7 +722,7 @@ html.tv .credit{padding-bottom:5vh}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 01:10 UTC';
+  const BUILD = '2026-10-11 01:15 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -739,6 +753,14 @@ html.tv .credit{padding-bottom:5vh}
     return /Tizen|SMART-TV|SmartTV|Web0S|WebOS|NetCast|HbbTV|BRAVIA|CrKey|AFT[A-Z]+|Android.*\bTV\b|Roku/i.test(ua);
   })();
   if (isTV) document.documentElement.classList.add('tv');
+  if (isTV) {
+    // A television's chip is slow: trailers behind the banner start off (Shift+T on a keyboard turns them on), and the page moves in one step instead of animating.
+    try { if (localStorage.getItem('jey.trailers') === null) localStorage.setItem('jey.trailers', 'false'); } catch (e) {}
+    try {
+      const si = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function (o) { return si.call(this, o && typeof o === 'object' ? Object.assign({}, o, { behavior: 'auto' }) : o); };
+      const st = window.scrollTo.bind(window); window.scrollTo = function (a, b) { return a && typeof a === 'object' ? st(Object.assign({}, a, { behavior: 'auto' })) : st(a, b); };
+    } catch (e) {}
+  }
   const rootId = v => { const p = String(v).split(':'); return p[0] === 'kitsu' ? p[0] + ':' + p[1] : p[0]; };
   const timeout = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
 
@@ -885,14 +907,24 @@ html.tv .credit{padding-bottom:5vh}
 
     const box = document.createElement('div');
     box.id = 'vp';
-    box.innerHTML = '<video playsinline autoplay></video><div class="vtop"><b></b></div><div class="vmsg"></div>' +
-      '<div class="vbar"><div class="vrail"><i></i></div><div class="vrow"><span class="vt">0:00</span><span class="vkeys">OK pause · ◀ ▶ 10 s · ▲ ▼ 1 min · Back close</span><span class="vd">0:00</span></div></div>';
+    box.innerHTML = '<video playsinline autoplay></video><div class="vtop"><b></b></div><div class="vnote"></div><div class="vmsg"></div>' +
+      '<div class="vbar"><div class="vrail"><i></i></div><div class="vrow"><span class="vt">0:00</span><span class="vkeys">OK pause · ◀ ▶ 10 s · ▲ ▼ picture · Back close</span><span class="vd">0:00</span></div></div>';
     document.body.appendChild(box);
     const v = box.querySelector('video'), msg = box.querySelector('.vmsg'), bar = box.querySelector('.vbar'), top = box.querySelector('.vtop');
     top.querySelector('b').textContent = name || '';
     let hideTimer = 0, closed = false, savedAt = 0, lastTick = Date.now(), started = false, deaf = false;
     const show = () => { box.classList.add('ui'); clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!v.paused) box.classList.remove('ui'); }, 4500); };
     const say = t => { msg.textContent = t || ''; msg.classList.toggle('on', !!t); };
+    // Picture: Fit keeps the whole picture (bars where it does not fill the screen), Fill crops the edges so no bar is left, Stretch fills the screen by stretching.
+    const FITS = [['contain', 'Fit: the whole picture'], ['cover', 'Fill: no bars, edges cropped'], ['fill', 'Stretch: no bars, picture stretched']];
+    let fi = Math.max(0, FITS.findIndex(f => f[0] === String(mem.get('atrium.m.fit', 'contain'))));
+    const note = box.querySelector('.vnote'); let noteT = 0;
+    const applyFit = announce => {
+      v.style.objectFit = FITS[fi][0]; mem.set('atrium.m.fit', FITS[fi][0]);
+      if (announce) { note.textContent = FITS[fi][1]; note.classList.add('on'); clearTimeout(noteT); noteT = setTimeout(() => note.classList.remove('on'), 2200); }
+    };
+    const nextFit = d => { fi = (fi + d + FITS.length) % FITS.length; applyFit(true); show(); };
+    applyFit(false);
     const save = async (ended) => {
       const dur = isFinite(v.duration) ? v.duration : 0, pos = v.currentTime || 0, now = new Date().toISOString();
       if (!started || (!ended && pos < 3)) return;
@@ -929,8 +961,10 @@ html.tv .credit{padding-bottom:5vh}
       else if (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || kc === 415 || kc === 19 || kc === 10252) toggle();
       else if (k === 'ArrowRight' || k === 'MediaFastForward' || kc === 417) jump(10);
       else if (k === 'ArrowLeft' || k === 'MediaRewind' || kc === 412) jump(-10);
-      else if (k === 'ArrowUp') jump(60);
-      else if (k === 'ArrowDown') jump(-60);
+      else if (k === 'ArrowUp' || kc === 405 || k === 'z' || k === 'Z') nextFit(1);
+      else if (k === 'ArrowDown') nextFit(-1);
+      else if (k === 'PageUp' || kc === 427) jump(60);
+      else if (k === 'PageDown' || kc === 428) jump(-60);
       else did = false;
       if (did) { ev.preventDefault(); ev.stopImmediatePropagation(); } else if (ev.key !== 'Shift' && ev.key !== 'Control') { ev.stopImmediatePropagation(); show(); }
     };
@@ -1360,7 +1394,7 @@ html.tv .credit{padding-bottom:5vh}
     return ev;
   }
   // installed as a Samsung app, the remote's media keys only reach the page once they are asked for
-  try { if (window.tizen && tizen.tvinputdevice) ['MediaPlay', 'MediaPause', 'MediaPlayPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'ColorF0Red'].forEach(n => { try { tizen.tvinputdevice.registerKey(n); } catch (e) {} }); } catch (e) {}
+  try { if (window.tizen && tizen.tvinputdevice) ['MediaPlay', 'MediaPause', 'MediaPlayPause', 'MediaStop', 'MediaFastForward', 'MediaRewind', 'ColorF0Red', 'ColorF2Yellow', 'ChannelUp', 'ChannelDown'].forEach(n => { try { tizen.tvinputdevice.registerKey(n); } catch (e) {} }); } catch (e) {}
   window.addEventListener('keydown', ev => {
     if (ev.__atrium) return;
     const kc = ev.keyCode || ev.which, k = ev.key;
