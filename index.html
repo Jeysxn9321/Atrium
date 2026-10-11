@@ -472,6 +472,7 @@ html.tv #sheet .about .lnk:focus-visible{outline:.3rem solid #fff;outline-offset
 html.tv .card:focus-visible{box-shadow:0 1rem 2.4rem #000c,0 0 0 .3rem #fff}
 html.tv button:focus-visible,html.tv summary:focus-visible,html.tv select:focus-visible,html.tv #setup input:focus{outline:.3rem solid #fff;outline-offset:.3rem}
 html.tv .chip:focus-visible,html.tv .ep:focus-visible,html.tv .v:focus-visible{outline:.3rem solid #fff;outline-offset:-.1rem}
+html.tv .ep .ver:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
 html.tv #setup{padding-left:var(--pad);padding-right:var(--pad)}
 html.tv #setup .panel{width:min(100%,62rem)}
 html.tv #setup input,html.tv #setup select{font-size:1.6rem}
@@ -746,7 +747,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 14:09 UTC';
+  const BUILD = '2026-10-11 14:29 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -2544,7 +2545,7 @@ async function openDetail(type, id, known, wantSeason, keep) { detailNow = { typ
         '<div class="go">' + I.play + '</div>' + (pct ? '<div class="bar"><i style="width:' + pct + '%"></i></div>' : '') + '</div>' +
         '<div class="tx"><b>' + esc(v.name || v.title || 'Episode ' + n) + '<span>' + (soon ? 'Coming ' + esc(date) : esc(date)) + '</span></b>' +
         '<p>' + esc((v.overview || v.description || '').trim()) + '</p></div>' +
-        (soon ? '' : '<div class="links"><button class="ver" tabindex="-1" title="Other versions (V)">Other versions</button></div>') + '</div>');
+        (soon ? '' : '<div class="links"><button class="ver" tabindex="' + (document.documentElement.classList.contains('tv') ? '0' : '-1') + '" title="Other versions (V)">Other versions</button></div>') + '</div>');
       const im = $('img', row); if (im) im.onerror = () => im.remove();
       if (!soon) {
         const info = epInfo(v);
@@ -3602,6 +3603,11 @@ document.addEventListener('keydown', ev => {
       if (first) { ev.preventDefault(); nav.keys = true; a.blur(); navFocus(first); }
     }
     return;
+  }
+  if (a && document.documentElement.classList.contains('tv')) {
+    const vb = k === 'ArrowRight' && a.matches('.ep') ? $('.ver', a) : null;
+    if (vb) { ev.preventDefault(); nav.keys = true; navFocus(vb); return; }
+    if ((k === 'ArrowLeft' || k === 'ArrowUp') && a.matches('.ep .ver')) { ev.preventDefault(); nav.keys = true; navFocus(a.closest('.ep')); return; }
   }
   const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[k];
   if (dir) { ev.preventDefault(); nav.keys = true; peekHide(); navGo(dir); return; }
