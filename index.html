@@ -742,7 +742,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 03:18 UTC';
+  const BUILD = '2026-10-11 03:28 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -2150,8 +2150,7 @@ async function render() {
     rows.classList.add('flat');
     const items = library.filter(x => !x.removed && !x.temp).sort((a, b) => String(b._mtime || '').localeCompare(String(a._mtime || '')));
     rows.appendChild(el('<div class="row"><h2>My list<small>' + items.length + ' titles from your Stremio library</small></h2></div>'));
-    { const dr = downloadsList(); if (dr) rows.appendChild(dr); }
-    if (!items.length) { rows.appendChild(el('<div class="empty">Your Stremio library is empty, or this device is not signed in (the gear at the top).</div>')); return; }
+    if (!items.length) { rows.appendChild(el('<div class="empty">Your Stremio library is empty, or this device is not signed in (the gear at the top).</div>')); { const dr = downloadsList(); if (dr) rows.appendChild(dr); } return; }
     // Sorted into movies, TV shows and anime; in each, the latest added first.
     const kind = x => (/^kitsu/.test(x._id) || x.type === 'anime' ? 'Animes' : x.type === 'movie' ? 'Movies' : 'TV Shows');
     ['Movies', 'TV Shows', 'Animes'].forEach(name => {
@@ -2162,6 +2161,7 @@ async function render() {
       part.forEach(x => $('.strip', row).appendChild(mk(x)));
       rows.appendChild(row);
     });
+    { const dr = downloadsList(); if (dr) rows.appendChild(dr); }
     return;
   }
 
