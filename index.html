@@ -742,7 +742,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 03:28 UTC';
+  const BUILD = '2026-10-11 03:55 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1376,7 +1376,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       '<h3>Picture</h3>' +
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<label>Trailers behind the banner<select id="suTrail"><option value="1">On</option><option value="0">Off (lighter, steadier on a phone or TV)</option></select></label>' +
-      (isTV ? '<p><button class="btn more" id="suAv">Samsung player test</button></p>' : '') +
+      (isTV && /Tizen/.test(ua) ? '<p><button class="btn more" id="suAv">Samsung player test</button></p>' : '') +
       (isIOS && !isTV && dlList().length ? '<h3>My downloads <small>' + dlList().length + ' sent to VLC from this device (the list under My list; the files stay in VLC)</small></h3><button class="btn more" id="suDlClear">Clear this list</button>' : '') +
       '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (VLC, or Atrium\'s own player on a Samsung or LG TV)</option><option value="vlc">VLC</option><option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
