@@ -742,7 +742,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 03:55 UTC';
+  const BUILD = '2026-10-11 04:22 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1332,6 +1332,35 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const r = await fetch(RELAY + c.topic, { method: 'POST', body: b64(iv) + '.' + b64(ct) });
     if (!r.ok) throw new Error('relay ' + r.status);
   }
+  // Roku sign-in (message type 2): the Roku has no PBKDF2 or AES-GCM, so it uses an iterated HMAC and AES-CBC with a MAC (see roku/src/source/Crypto.brs).
+  const hexOf = u => Array.from(u, b => b.toString(16).padStart(2, '0')).join('');
+  async function r2Keys(code) {
+    const enc = new TextEncoder(), sub = crypto.subtle, alg = { name: 'HMAC', hash: 'SHA-256' };
+    const ck = await sub.importKey('raw', enc.encode(code), alg, false, ['sign']);
+    let u = new Uint8Array(await sub.sign('HMAC', ck, enc.encode('atrium-roku-v2')));
+    for (let i = 2; i <= 30000; i++) u = new Uint8Array(await sub.sign('HMAC', ck, u));
+    const kk = await sub.importKey('raw', u, alg, false, ['sign']);
+    const part = async n => new Uint8Array(await sub.sign('HMAC', kk, enc.encode(n)));
+    const encRaw = await part('enc'), macRaw = await part('mac'), topic = hexOf(await part('topic')).slice(0, 24);
+    return {
+      enc: await sub.importKey('raw', encRaw, 'AES-CBC', false, ['encrypt', 'decrypt']),
+      mac: await sub.importKey('raw', macRaw, alg, false, ['sign']),
+      topic: 'atrium-r2-' + topic
+    };
+  }
+  async function r2Message(code, payload, iv) {
+    const k = await r2Keys(code), enc = new TextEncoder();
+    iv = iv || crypto.getRandomValues(new Uint8Array(16));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: iv }, k.enc, enc.encode(JSON.stringify(payload))));
+    const signed = b64(iv) + '.' + b64(ct);
+    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', k.mac, enc.encode(signed)));
+    return { topic: k.topic, body: signed + '.' + hexOf(mac) };
+  }
+  async function r2Send(code, payload) {
+    const m = await r2Message(code, payload);
+    const r = await fetch(RELAY + m.topic, { method: 'POST', body: m.body });
+    if (!r.ok) throw new Error('relay ' + r.status);
+  }
   async function tvReceive(code) {
     const c = await tvCrypto(code);
     const r = await fetch(RELAY + c.topic + '/json?poll=1&since=all');
@@ -1447,7 +1476,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       if (!goodCode(code)) { say('That is not a TV code: it has 8 letters and numbers, shown as ABCD-EFGH (no 0, O, 1 or I).', true); return; }
       if (!stremioKey()) { say('This phone is not signed in.', true); return; }
       say('Sending…');
-      try { await tvSend(code, { k: stremioKey(), t: tmdbKey() || '' }); say('Sent. The TV signs in within a few seconds. If it does not, check the code on the TV.'); }
+      try { await tvSend(code, { k: stremioKey(), t: tmdbKey() || '' }); try { await r2Send(code, { k: stremioKey() }); } catch (e2) {} say('Sent. The TV signs in within a few seconds. If it does not, check the code on the TV.'); }
       catch (e) { say('Could not reach the relay. Check the connection and try again.', true); }
     };
     $('#suReload').onclick = ev => { ev.preventDefault(); location.replace(location.pathname + '?r=' + Date.now()); };
@@ -1455,6 +1484,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     if (out) out.onclick = () => { mem.set(K.stremio, ''); mem.set(K.tmdb, ''); reloadSoon(); };
   }
   window.AtriumSettings = openSettings;
+  window.AtriumR2 = { message: r2Message };
 
   // ---------- the remote control ----------
   // Back, Info and the colour keys differ from one television to the next; they become the keys Atrium already knows.
