@@ -454,7 +454,7 @@ html.tv #setup .tvcode{font-size:7rem}
 
 /* ---------- television ----------
    Seen from the sofa: larger letters, margins that stay clear of the screen's edge, a thick ring on what the remote is on. */
-html.tv{font-size:max(12px,100vh / 50);--pad:5vw;cursor:none}
+html.tv{font-size:calc(100vh / 50);--pad:5vw;cursor:none}
 html.tv body{overscroll-behavior:none}
 html.tv #peek{display:none!important}
 html.tv #top{height:6.4rem;padding-left:var(--pad);padding-right:var(--pad)}
@@ -463,7 +463,11 @@ html.tv #tabs{gap:1.5rem}
 html.tv #tabs button{padding:.6rem .3rem;white-space:nowrap}
 html.tv #search{padding:.7rem 1.4rem;width:auto;flex:0 1 22rem;min-width:11rem}
 html.tv #search input{min-width:0;width:100%;text-overflow:ellipsis}
-html.tv #hero{height:74vh;min-height:0}
+html.tv #hero{height:66vh;min-height:0}
+html.tv #hero .info{bottom:12%}
+html.tv #rows{margin-top:.5rem}
+html.tv .card.wide{width:18rem;height:10.1rem}
+html.tv .card.poster{width:9.4rem;height:14.1rem}
 html.tv #sheet .about .lnk:focus-visible{outline:.3rem solid #fff;outline-offset:.25rem}
 html.tv .card:focus-visible{box-shadow:0 1rem 2.4rem #000c,0 0 0 .3rem #fff}
 html.tv button:focus-visible,html.tv summary:focus-visible,html.tv select:focus-visible,html.tv #setup input:focus{outline:.3rem solid #fff;outline-offset:.3rem}
@@ -742,7 +746,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 04:22 UTC';
+  const BUILD = '2026-10-11 13:05 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
