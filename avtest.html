@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Atrium · Samsung player test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:transparent;color:#fff;font:26px/1.35 system-ui,sans-serif;overflow:hidden}
+  body.idle{background:#0b0b0d}
+  #log{position:absolute;left:3vw;top:3vh;right:3vw;bottom:14vh;white-space:pre-wrap;word-break:break-word;font:24px/1.35 ui-monospace,Consolas,monospace;text-shadow:0 0 6px #000,0 0 3px #000}
+  #menu{position:absolute;left:3vw;bottom:3vh;display:flex;gap:1.4rem}
+  button{font:inherit;color:#fff;background:#222;border:3px solid #444;border-radius:.6rem;padding:.7rem 1.4rem}
+  button:focus{outline:none;border-color:#fff;background:#e50914}
+  #av{position:absolute;left:0;top:0;width:100%;height:100%}
+  video{position:absolute;left:0;top:0;width:100%;height:100%;background:#000;display:none}
+  #hint{position:absolute;right:3vw;bottom:3.4vh;color:#bbb;font-size:20px}
+</style></head><body class="idle">
+<object id="av" type="application/avplayer"></object>
+<video id="vid" playsinline></video>
+<div id="log"></div>
+<div id="menu"><button id="b1">1 · Info</button><button id="b2">2 · Samsung player</button><button id="b3">3 · Page video, full screen</button><button id="b4">Back to Atrium</button></div>
+<div id="hint">◀ ▶ choose · OK start · Back stop</div>
+<script src="$WEBAPIS/webapis/webapis.js"></script>
+<script>
+(function () {
+  var SAMPLE = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  var logEl = document.getElementById('log'), lines = [];
+  function log(t) { lines.push(t); if (lines.length > 26) lines.shift(); logEl.textContent = lines.join('\n'); try { console.log(t); } catch (e) {} }
+  function clear() { lines = []; logEl.textContent = ''; }
+  function safe(f, d) { try { var v = f(); return v === undefined ? d : v; } catch (e) { return d === undefined ? 'error: ' + e.message : d; } }
+  var avp = window.webapis && webapis.avplay, mode = 'idle', modeIx = 0, rectIx = 0;
+  var SW = screen.width, SH = screen.height;
+  var MODES = ['PLAYER_DISPLAY_MODE_LETTER_BOX', 'PLAYER_DISPLAY_MODE_FULL_SCREEN', 'PLAYER_DISPLAY_MODE_CROPPED_FULL', 'PLAYER_DISPLAY_MODE_AUTO_ASPECT_RATIO'];
+  // the picture areas to try, in the app's own 1920 x 1080 units
+  var wideW = Math.round(1080 * SW / SH);
+  var RECTS = [[0, 0, 1920, 1080], [0, 0, wideW, 1080], [-(wideW - 1920) / 2, 0, wideW, 1080]];
+
+  function info() {
+    clear(); mode = 'idle'; document.body.className = 'idle';
+    log('Samsung player test');
+    log('page window     ' + innerWidth + ' x ' + innerHeight + '   (pixel ratio ' + devicePixelRatio + ')');
+    log('screen          ' + SW + ' x ' + SH);
+    log('webapis loaded  ' + (window.webapis ? 'yes' : 'NO'));
+    log('avplay          ' + (avp ? 'yes' : 'NO'));
+    log('tizen object    ' + (window.tizen ? 'yes' : 'no'));
+    if (window.webapis && webapis.productinfo) {
+      log('model           ' + safe(function () { return webapis.productinfo.getRealModel(); }));
+      log('firmware        ' + safe(function () { return webapis.productinfo.getFirmware(); }));
+      log('8K / UHD panel  ' + safe(function () { return webapis.productinfo.is8KPanelSupported() + ' / ' + webapis.productinfo.isUdPanel(); }));
+    }
+    log('fullscreen API  ' + (document.documentElement.requestFullscreen ? 'yes' : 'no'));
+    log('user agent      ' + navigator.userAgent.replace(/Mozilla\/5.0 /, ''));
+    log('');
+    log('Press 2 to play with the Samsung player, 3 for page video.');
+  }
+
+  function stopAv() { try { if (avp) { avp.stop(); avp.close(); } } catch (e) {} }
+  function stopVid() { var v = document.getElementById('vid'); try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} v.style.display = 'none'; try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {} }
+  function stopAll() { stopAv(); stopVid(); info(); }
+
+  function applyAv() {
+    var r = RECTS[rectIx];
+    try { avp.setDisplayRect(Math.round(r[0]), r[1], Math.round(r[2]), r[3]); } catch (e) { log('setDisplayRect failed: ' + e.message); }
+    try { avp.setDisplayMethod(MODES[modeIx]); } catch (e) { log('setDisplayMethod failed: ' + e.message); }
+    clear(); log('Samsung player   ' + MODES[modeIx].replace('PLAYER_DISPLAY_MODE_', ''));
+    log('picture area    ' + Math.round(r[0]) + ', ' + r[1] + ', ' + Math.round(r[2]) + ' x ' + r[3] + '   (Up/Down changes it)');
+    log('Left/Right changes the mode · Back stops');
+  }
+  function playAv() {
+    if (!avp) { clear(); log('The Samsung player is not available to this page (webapis missing).'); log('The app config needs the avplay privilege, and the app must have been reinstalled.'); return; }
+    stopAll(); mode = 'av'; document.body.className = ''; clear();
+    try {
+      avp.open(SAMPLE);
+      avp.setListener({
+        onbufferingstart: function () { log('buffering...'); }, onbufferingcomplete: function () { log('playing'); },
+        onstreamcompleted: function () { log('finished'); }, oncurrentplaytime: function () {},
+        onerror: function (e) { log('player error: ' + e); }, onevent: function () {}, onsubtitlechange: function () {}, ondrmevent: function () {}
+      });
+      applyAv();
+      avp.prepareAsync(function () {
+        log('prepared; starting');
+        try { var s = avp.getCurrentStreamInfo(); log('streams: ' + s.length); } catch (e) {}
+        try { avp.play(); applyAv(); } catch (e) { log('play failed: ' + e.message); }
+      }, function (e) { log('prepare failed: ' + e); });
+    } catch (e) { log('Samsung player failed: ' + e.message); }
+  }
+  function playVid() {
+    stopAll(); mode = 'vid'; document.body.className = 'idle'; clear();
+    var v = document.getElementById('vid'); v.style.display = 'block'; v.src = SAMPLE; v.muted = false;
+    v.play().catch(function (e) { log('page video: ' + e.message); });
+    var tries = [['video', v.requestFullscreen && v.requestFullscreen.bind(v)], ['page', document.documentElement.requestFullscreen && document.documentElement.requestFullscreen.bind(document.documentElement)]];
+    var t = tries[0][1];
+    if (t) { try { t().then(function () { report(); }).catch(function (e) { log('full screen refused: ' + (e && e.message)); report(); }); } catch (e) { log('full screen failed: ' + e.message); } } else log('no full screen API');
+    function report() { setTimeout(function () { log('window after full screen: ' + innerWidth + ' x ' + innerHeight + '   element: ' + (document.fullscreenElement ? document.fullscreenElement.tagName : 'none')); }, 600); }
+  }
+
+  var btns = ['b1', 'b2', 'b3', 'b4'].map(function (id) { return document.getElementById(id); });
+  var fi = 1;
+  btns[0].onclick = info; btns[1].onclick = playAv; btns[2].onclick = playVid; btns[3].onclick = function () { stopAll(); location.href = './'; };
+  document.addEventListener('keydown', function (ev) {
+    var k = ev.key, kc = ev.keyCode;
+    var back = k === 'Escape' || k === 'Backspace' || k === 'GoBack' || kc === 10009 || kc === 461 || kc === 413;
+    if (back) { ev.preventDefault(); if (mode === 'idle') { location.href = './'; } else stopAll(); return; }
+    if (mode === 'av') {
+      if (k === 'ArrowRight') { modeIx = (modeIx + 1) % MODES.length; applyAv(); }
+      else if (k === 'ArrowLeft') { modeIx = (modeIx + MODES.length - 1) % MODES.length; applyAv(); }
+      else if (k === 'ArrowUp') { rectIx = (rectIx + 1) % RECTS.length; applyAv(); }
+      else if (k === 'ArrowDown') { rectIx = (rectIx + RECTS.length - 1) % RECTS.length; applyAv(); }
+      else if (k === 'Enter') { try { if (avp.getState() === 'PLAYING') avp.pause(); else avp.play(); } catch (e) {} }
+      else return;
+      ev.preventDefault(); return;
+    }
+    if (k === '1') info(); else if (k === '2') playAv(); else if (k === '3') playVid();
+    else if (k === 'ArrowRight') { fi = Math.min(3, fi + 1); btns[fi].focus(); }
+    else if (k === 'ArrowLeft') { fi = Math.max(0, fi - 1); btns[fi].focus(); }
+    else if (k === 'Enter' && document.activeElement && document.activeElement.click) { document.activeElement.click(); }
+    else return;
+    ev.preventDefault();
+  });
+  try { if (window.tizen && tizen.tvinputdevice) ['0', '1', '2', '3'].forEach(function (n) { try { tizen.tvinputdevice.registerKey(n); } catch (e) {} }); } catch (e) {}
+  info(); btns[1].focus();
+})();
+</script></body></html>
