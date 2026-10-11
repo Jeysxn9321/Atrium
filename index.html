@@ -728,7 +728,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 02:04 UTC';
+  const BUILD = '2026-10-11 02:19 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -823,10 +823,21 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   const streamUrls = new Map();
   async function getStreams(type, id) {
     if (!/^(movie|series|anime)$/.test(type) || !/^[A-Za-z0-9:_\-]+$/.test(id)) return { streams: [], error: 'bad id' };
-    const base = await getTorrentio();
+    let base;
+    try { base = await getTorrentio(); } catch (e) { throw new Error('the Stremio account did not answer (' + (e && e.message || e) + ')'); }
     if (!base) return { streams: [], error: 'no add-on' };
-    const r = await fetch(base + '/stream/' + type + '/' + id + '.json');
-    const j = await r.json();
+    // up to two tries, each cut off after 15 s; the reason is kept so the screen can say what failed
+    let j = null, why = '';
+    for (let i = 0; i < 2 && !j; i++) {
+      try {
+        const ac = new AbortController(), t = setTimeout(() => ac.abort(), 15000);
+        const r = await fetch(base + '/stream/' + type + '/' + id + '.json', { signal: ac.signal });
+        clearTimeout(t);
+        if (!r.ok) { why = 'Torrentio answered ' + r.status + (r.status === 403 || r.status === 429 ? ' (it is refusing or limiting this connection)' : ''); continue; }
+        j = await r.json();
+      } catch (e) { why = (e && e.name === 'AbortError') ? 'Torrentio took more than 15 s' : 'could not reach Torrentio (' + (e && e.message || e) + ')'; }
+    }
+    if (!j) throw new Error(why);
     const urls = [];
     const streams = (j.streams || []).map(s => {
       const c = Object.assign({}, s);
@@ -2559,7 +2570,7 @@ async function play(type, id, info) { if (dlDone(id)) { playFile(id, info); retu
   launch.show(info, id);
   launch.status('Finding the best version…');
   let list;
-  try { list = await getStreams(type, id); } catch (e) { launch.fail('No answer. Check the connection and try again.'); return; }
+  try { list = await getStreams(type, id); } catch (e) { launch.fail('No answer: ' + String((e && e.message) || 'check the connection and try again') + '.'); return; }
   if (!launch.active(id)) return;      // backed out meanwhile
   if (!list.length) {
     launch.fail(list.error === 'no add-on' ? 'No Torrentio add-on was found in your Stremio account.' : 'No stream found for this one.');
