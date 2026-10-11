@@ -472,6 +472,8 @@ html.tv #sheet .about .lnk:focus-visible{outline:.3rem solid #fff;outline-offset
 html.tv .card:focus-visible{box-shadow:0 1rem 2.4rem #000c,0 0 0 .3rem #fff}
 html.tv button:focus-visible,html.tv summary:focus-visible,html.tv select:focus-visible,html.tv #setup input:focus{outline:.3rem solid #fff;outline-offset:.3rem}
 html.tv .chip:focus-visible,html.tv .ep:focus-visible,html.tv .v:focus-visible{outline:.3rem solid #fff;outline-offset:-.1rem}
+html.tv #setup .ver a{display:block;margin-top:.8rem;padding:.9rem 1rem;background:var(--panel2);border-radius:.6rem;text-align:center;font-size:1.3rem;color:#fff;text-decoration:none}
+html.tv #setup a:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
 html.tv .ep .ver:focus-visible{outline:.3rem solid #fff;outline-offset:.2rem;color:#fff;border-radius:.3rem}
 html.tv #setup{padding-left:var(--pad);padding-right:var(--pad)}
 html.tv #setup .panel{width:min(100%,62rem)}
@@ -747,7 +749,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 14:44 UTC';
+  const BUILD = '2026-10-11 14:56 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -3555,7 +3557,7 @@ function navScope() {
   return document.body;
 }
 function navItems(scope) {
-  return $$('button, input, select, summary, .card, .ep, .v', scope).filter(e => {
+  return $$('button, input, select, summary, #setup a[href], .card, .ep, .v', scope).filter(e => {
     if (e.disabled || e.tabIndex < 0) return false;
     if (scope === document.body && e.closest('#veil, #catMenu, #peek, #launch')) return false;
     const card = e.closest('.card');
