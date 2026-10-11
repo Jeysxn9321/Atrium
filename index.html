@@ -382,7 +382,9 @@ html.seen #intro{display:none}
    phone layout (a narrow screen held upright), then touch screens in general. */
 
 /* ---------- every device ---------- */
-#castBtn,#dlBtn,#fsBtn,#closeBtn,#updBtn,[data-dl],.dlk,.v .vd{display:none!important}
+#castBtn,#dlBtn,#fsBtn,#closeBtn,#updBtn{display:none!important}
+/* the Download buttons: only where VLC can do the downloading (iPhone, iPad) */
+html:not(.dl-ok) [data-dl],html:not(.dl-ok) .dlk,html:not(.dl-ok) .v .vd{display:none!important}
 #setBtn{margin-left:0}
 
 #setup{position:fixed;inset:0;z-index:300;background:#000d;overflow-y:auto;-webkit-overflow-scrolling:touch;
@@ -625,6 +627,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   #hero .glow,#launch .glow{display:none}
   #castMenu{backdrop-filter:none;-webkit-backdrop-filter:none}
 }
+
+/* the close cross of the settings screen, always in view at the top right */
+#setup .sx{position:fixed;z-index:2;top:calc(env(safe-area-inset-top) + .8rem);right:1.2rem;width:4.4rem;height:4.4rem;border-radius:50%;border:0;
+  background:#2a2a2e;color:#fff;font-size:3rem;line-height:1;display:flex;align-items:center;justify-content:center;padding:0 0 .3rem;cursor:pointer}
+#setup .sx:focus-visible{outline:.3rem solid #fff}
 </style>
 </head>
 <body>
@@ -728,7 +735,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 02:19 UTC';
+  const BUILD = '2026-10-11 02:39 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -759,6 +766,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return /Tizen|SMART-TV|SmartTV|Web0S|WebOS|NetCast|HbbTV|BRAVIA|CrKey|AFT[A-Z]+|Android.*\bTV\b|Roku/i.test(ua);
   })();
   if (isTV) document.documentElement.classList.add('tv');
+  // Downloads: VLC on an iPhone or iPad downloads the file itself (its own x-callback), so the Download buttons show there.
+  if (isIOS && !isTV) document.documentElement.classList.add('dl-ok');
   // A phone or a tablet has little memory for a page and a YouTube frame at once (Safari restarts the page when it runs out): trailers behind the banner start off there too.
   try { if (localStorage.getItem('jey.trailers') === null && (isTV || (window.matchMedia && matchMedia('(hover: none)').matches))) localStorage.setItem('jey.trailers', 'false'); } catch (e) {}
   if (isTV) {
@@ -1032,6 +1041,23 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return { ok: true };
   }
 
+  // Download: VLC for iPhone and iPad can fetch a file into its own library (and play it offline). The page only hands it the address.
+  async function downloadStream(body) {
+    let b = {};
+    try { b = JSON.parse(body || '{}'); } catch (e) {}
+    if (!isIOS) return { ok: false, error: 'downloads work on iPhone and iPad, through VLC' };
+    const urls = streamUrls.get(String(b.type || '') + '/' + String(b.id || '')), n = +b.n;
+    if (!urls || !(n >= 0) || n >= urls.length) return { ok: false, error: 'unknown stream' };
+    const url = String(urls[n]);
+    if (!/^https:\/\/[A-Za-z0-9.\-]+\//.test(url) || /["\s]/.test(url)) return { ok: false, error: 'bad address' };
+    const ext = (url.split('?')[0].match(/\.(mkv|mp4|m4v|avi|mov|webm|ts)$/i) || [''])[0];
+    const base = String(b.name || b.title || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+    let href = 'vlc-x-callback://x-callback-url/download?url=' + encodeURIComponent(url);
+    if (base && ext) href += '&filename=' + encodeURIComponent(base + ext);
+    try { window.AtriumOpen(href); } catch (e) {}
+    return { ok: true };
+  }
+
   // ---------- TMDB: trailers, new seasons, and titles the catalogue does not know ----------
   const TMDB = 'https://api.themoviedb.org/3/';
   async function tm(path, query) {
@@ -1235,6 +1261,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       case '/api/resume': return {};
       case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '');
       case '/api/play': return playStream(q, opt.body);
+      case '/api/download': return downloadStream(opt.body);
       case '/api/tmdb': return tmdbInfo(q.get('type') || '', q.get('id') || '', q.get('full'));
       case '/api/tmdb/season': return tmdbSeason(q.get('id') || '', q.get('n') || '');
       case '/api/tmdb/search': return tmdbSearch(q.get('q'));
@@ -1305,7 +1332,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     box = document.createElement('div');
     box.id = 'setup';
     if (first) box.dataset.first = '1';
-    box.innerHTML = '<div class="panel">' +
+    box.innerHTML = '<button class="sx" id="suClose" aria-label="Close">&times;</button><div class="panel">' +
       '<h2>' + (first ? 'Welcome to Atrium' : 'Settings') + '</h2>' +
       (notice ? '<p class="hint">' + esc(notice) + '</p>' : '') +
       (first ? '<p>Sign in once on this device: it stays signed in. Your library, My list and your TorBox add-on come from your Stremio account.</p>' : '') +
@@ -1335,6 +1362,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const $ = s => box.querySelector(s), say = (t, bad) => { const m = $('#suMsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
     $('#suPlayer').value = playerPref();
+    $('#suClose').onclick = () => box.remove();
+    if (first) $('#suClose').style.display = 'none';
     if ($('#suAv')) $('#suAv').onclick = () => { location.href = 'avtest.html'; };
     try { $('#suTrail').value = JSON.parse(localStorage.getItem('jey.trailers') || 'true') === false ? '0' : '1'; } catch (e) {}
     const saveSmall = () => {
@@ -3641,7 +3670,7 @@ async function download(type, id, info, stream) {
       name: info.file || ((info.name || '') + (/^\d{4}$/.test(year) ? ' (' + year + ')' : '')), q: quality(s) };
     const r = await local('/api/download', { method: 'POST', body: JSON.stringify(body) });
     if (!r.ok) { streamsCache.delete(type + '/' + id); toast('Could not start the download (' + (r.error || 'unknown') + ').', { ms: 6000 }); return; }
-    toast('Downloading ' + quality(s) + '. Follow it in Downloads.', { ms: 5000 });
+    toast('Sent to VLC (' + quality(s) + '). It downloads there: open VLC to follow it and to watch it offline.', { ms: 7000 });
     loadDownloads();
   } catch (e) { toast('No answer. Check the connection and try again.', { ms: 6000 }); }
 }
