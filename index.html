@@ -746,7 +746,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 13:27 UTC';
+  const BUILD = '2026-10-11 13:40 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1078,6 +1078,10 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   const dlTo = () => String(mem.get('atrium.m.dlto', 'files')) === 'vlc' ? 'vlc' : 'files';
   window.AtriumDlTo = dlTo;
   window.AtriumSave = (url, name) => {
+    // From the Home Screen app a link opens in a small in-app Safari sheet that does not offer the download (seen on a real iPhone);
+    // x-safari-https:// hands the address to the full Safari app, which has the download manager.
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    if (standalone && /^https:\/\//.test(url)) { location.href = 'x-safari-' + url; return; }
     const a = document.createElement('a');
     a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; if (name) a.download = name;
     a.style.display = 'none'; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 1000);
