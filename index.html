@@ -735,7 +735,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 02:39 UTC';
+  const BUILD = '2026-10-11 02:54 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1055,8 +1055,23 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     let href = 'vlc-x-callback://x-callback-url/download?url=' + encodeURIComponent(url);
     if (base && ext) href += '&filename=' + encodeURIComponent(base + ext);
     try { window.AtriumOpen(href); } catch (e) {}
+    noteDownload(b);
     return { ok: true };
   }
+  // "My downloads": the titles sent to VLC from this device, newest first, one card per title (an episode counts for its series).
+  // Atrium cannot see VLC's progress, so this is a list of what was started, not a check that the file arrived.
+  const DLS = 'atrium.m.dls';
+  const dlList = () => { const l = mem.json(DLS, []); return Array.isArray(l) ? l.filter(x => x && x.root && x.title) : []; };
+  function noteDownload(b) {
+    try {
+      const id = String(b.id || ''), root = rootId(id), title = String(b.title || '').slice(0, 120);
+      if (!root || !title) return;
+      const l = dlList().filter(x => x.root !== root);
+      l.unshift({ root: root, type: String(b.type || 'movie'), title: title, at: Date.now() });
+      localStorage.setItem(DLS, JSON.stringify(l.slice(0, 60)));
+    } catch (e) {}
+  }
+  window.AtriumDownloads = dlList;
 
   // ---------- TMDB: trailers, new seasons, and titles the catalogue does not know ----------
   const TMDB = 'https://api.themoviedb.org/3/';
@@ -1353,6 +1368,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<label>Trailers behind the banner<select id="suTrail"><option value="1">On</option><option value="0">Off (lighter, steadier on a phone or TV)</option></select></label>' +
       (isTV ? '<p><button class="btn more" id="suAv">Samsung player test</button></p>' : '') +
+      (isIOS && !isTV && dlList().length ? '<h3>My downloads <small>' + dlList().length + ' title' + (dlList().length === 1 ? '' : 's') + ' sent to VLC from this device (the list on Home; the files stay in VLC)</small></h3><button class="btn more" id="suDlClear">Clear this list</button>' : '') +
       '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (VLC, or Atrium\'s own player on a Samsung or LG TV)</option><option value="vlc">VLC</option><option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
@@ -1363,6 +1379,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
     $('#suPlayer').value = playerPref();
     $('#suClose').onclick = () => box.remove();
+    if ($('#suDlClear')) $('#suDlClear').onclick = () => { try { localStorage.removeItem(DLS); } catch (e) {} $('#suDlClear').textContent = 'Cleared'; $('#suDlClear').disabled = true; };
     if (first) $('#suClose').style.display = 'none';
     if ($('#suAv')) $('#suAv').onclick = () => { location.href = 'avtest.html'; };
     try { $('#suTrail').value = JSON.parse(localStorage.getItem('jey.trailers') || 'true') === false ? '0' : '1'; } catch (e) {}
@@ -2124,6 +2141,7 @@ async function render() {
     rows.classList.add('flat');
     const items = library.filter(x => !x.removed && !x.temp).sort((a, b) => String(b._mtime || '').localeCompare(String(a._mtime || '')));
     rows.appendChild(el('<div class="row"><h2>My list<small>' + items.length + ' titles from your Stremio library</small></h2></div>'));
+    { const dr = downloadsRow(); if (dr) rows.appendChild(dr); }
     if (!items.length) { rows.appendChild(el('<div class="empty">Your Stremio library is empty, or this device is not signed in (the gear at the top).</div>')); return; }
     // Sorted into movies, TV shows and anime; in each, the latest added first.
     const kind = x => (/^kitsu/.test(x._id) || x.type === 'anime' ? 'Animes' : x.type === 'movie' ? 'Movies' : 'TV Shows');
@@ -2147,6 +2165,7 @@ async function render() {
       mine.forEach(x => $('.strip', row).appendChild(tileCard({ id: x._id, type: x.type, name: x.name, poster: x.poster })));
       rows.appendChild(row);
     }
+    { const dr = downloadsRow(); if (dr) rows.appendChild(dr); }
     rows.appendChild(catalogRow('Popular TV shows', 'series', 'top', null, null, 5));
     rows.appendChild(catalogRow('Popular movies', 'movie', 'top', null, null, 5));
     rows.appendChild(catalogRow('New movies', 'movie', 'year', String(new Date().getFullYear())));
@@ -3789,6 +3808,16 @@ function drawDownloads() {
     dlRows[d.key] = row;
     box.appendChild(row);
   });
+}
+
+// ---------- my downloads (phone and tablet only) ----------
+function downloadsRow() {
+  const list = window.AtriumDownloads ? window.AtriumDownloads() : [];
+  if (!list.length) return null;
+  const row = makeRow('My downloads', 'sent to VLC from this device');
+  list.forEach(d => { const lib = library.find(x => x._id === d.root);
+    $('.strip', row).appendChild(tileCard({ id: d.root, type: d.type, name: d.title, poster: (lib && lib.poster) || (isImdb(d.root) ? 'https://images.metahub.space/poster/small/' + d.root + '/img' : null) })); });
+  return row;
 }
 
 // ---------- categories ----------
