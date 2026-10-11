@@ -746,7 +746,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 13:40 UTC';
+  const BUILD = '2026-10-11 14:09 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -896,7 +896,16 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   }
 
   // ---------- playing ----------
-  function playerLink(url) {
+  function playerLink(url, name, at) {
+    if (isIOS && !isTV && playerPref() === 'infuse') {
+      // Infuse: the file name helps it find the poster, and position starts it where Atrium last saw you stop
+      const ext = (url.split('?')[0].match(/\.(mkv|mp4|m4v|avi|mov|webm|ts)$/i) || [''])[0];
+      const base = String(name || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+      let h = 'infuse://x-callback-url/play?url=' + encodeURIComponent(url);
+      if (base && ext) h += '&filename=' + encodeURIComponent(base + ext);
+      if (at > 5) h += '&position=' + Math.floor(at);
+      return h;
+    }
     if (isIOS) return 'vlc-x-callback://x-callback-url/stream?url=' + encodeURIComponent(url);
     if (isAndroid) return 'intent:' + url + '#Intent;package=org.videolan.vlc;type=video/*;end';
     return 'vlc://' + url;
@@ -909,7 +918,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     bar.id = 'openBar';
     bar.innerHTML = '<a class="go"></a><button class="cp">Copy link</button><button class="x" aria-label="Close">×</button>';
     const a = bar.querySelector('.go');
-    a.textContent = 'Open in VLC';
+    a.textContent = /^infuse:/.test(href) ? 'Open in Infuse' : 'Open in VLC';
     a.href = href;
     bar.querySelector('.cp').onclick = async () => {
       try { await navigator.clipboard.writeText(url); bar.querySelector('.cp').textContent = 'Copied'; } catch (e) { bar.querySelector('.cp').textContent = 'Could not copy'; }
@@ -925,8 +934,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // ---------- the player inside Atrium (televisions that cannot run VLC) ----------
   // Samsung and LG televisions have no VLC. There, and wherever it is chosen in the settings, the video plays in the
   // page itself. The position is written back to Stremio, so Continue watching follows on every device.
-  const playerPref = () => { const v = String(mem.get('atrium.m.player', 'auto')); return v === 'vlc' || v === 'own' ? v : 'auto'; };
-  const useOwn = () => { const v = playerPref(); return v === 'own' || (v === 'auto' && isTV && !isAndroid); };
+  const playerPref = () => { const v = String(mem.get('atrium.m.player', 'auto')); return v === 'vlc' || v === 'own' || (v === 'infuse' && isIOS && !isTV) ? v : 'auto'; };
+  const useOwn = () => { const v = playerPref(); return v === 'own' || (v === 'auto' && isTV); };
   // What these televisions cannot decode: DTS and TrueHD sound. A version with only that plays without sound, so it is not offered
   // when another version exists.
   const badSound = s => { const t = ((s.name || '') + ' ' + (s.title || '') + ' ' + ((s.behaviorHints && s.behaviorHints.filename) || '')); return /DTS|TrueHD/i.test(t) && !/DD\+|DDP|EAC3|E-AC-3|AC3|\bAAC|DD5/i.test(t); };
@@ -950,7 +959,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     document.body.appendChild(box);
     const v = box.querySelector('video'), msg = box.querySelector('.vmsg'), bar = box.querySelector('.vbar'), top = box.querySelector('.vtop');
     top.querySelector('b').textContent = name || '';
-    let hideTimer = 0, closed = false, savedAt = 0, lastTick = Date.now(), started = false, deaf = false;
+    let hideTimer = 0, closed = false, savedAt = 0, lastTick = Date.now(), started = false, deaf = false, vlcOffer = false;
     const show = () => { box.classList.add('ui'); clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!v.paused) box.classList.remove('ui'); }, 4500); };
     const say = t => { msg.textContent = t || ''; msg.classList.toggle('on', !!t); };
     // Picture: Fit keeps the whole picture (bars where it does not fill the screen), Fill crops the edges so no bar is left, Stretch fills the screen by stretching.
@@ -996,6 +1005,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       const k = ev.key, kc = ev.keyCode || ev.which;
       let did = true;
       if (k === 'Escape' || k === 'Backspace' || k === 'GoBack' || k === 'BrowserBack' || k === 'XF86Back' || k === 'MediaStop' || kc === 10009 || kc === 461 || kc === 413 || kc === 4) close(false);
+      else if (vlcOffer && (k === 'Enter' || kc === 13 || kc === 23)) { try { window.AtriumOpen(playerLink(url)); } catch (e) {} close(false); }
       else if (k === 'Enter' || k === ' ' || k === 'MediaPlayPause' || kc === 415 || kc === 19 || kc === 10252) toggle();
       else if (k === 'ArrowRight' || k === 'MediaFastForward' || kc === 417) jump(10);
       else if (k === 'ArrowLeft' || k === 'MediaRewind' || kc === 412) jump(-10);
@@ -1019,15 +1029,15 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       box.querySelector('.vrail i').style.width = (dur ? Math.min(100, v.currentTime / dur * 100) : 0) + '%';
       box.querySelector('.vt').textContent = fmtTime(v.currentTime); box.querySelector('.vd').textContent = fmtTime(dur);
       if (!deaf && !/Tizen|SMART-TV/i.test(navigator.userAgent) && v.currentTime > 4 && typeof v.webkitAudioDecodedByteCount === 'number' && v.webkitAudioDecodedByteCount === 0 && !v.muted) {
-        deaf = true; say('No sound: this version\'s audio format cannot be played on this TV. Press Back, then pick another version.'); show();
+        deaf = true; say('No sound: this version\'s audio format cannot be played here. ' + (isAndroid ? 'Press OK to open it in VLC, or Back to pick another version.' : 'Press Back, then pick another version.')); vlcOffer = isAndroid; show();
       }
       if (Date.now() - savedAt > 20000 && !v.paused) { savedAt = Date.now(); save(false); }
     });
-    v.addEventListener('playing', () => { say(''); if (!started) { started = true; lastTick = Date.now(); savedAt = Date.now(); setTimeout(() => save(false), 4000); } show(); });
+    v.addEventListener('playing', () => { say(vlcOffer ? 'Press OK to open this in VLC, or Back to pick another version.' : ''); if (!started) { started = true; lastTick = Date.now(); savedAt = Date.now(); setTimeout(() => save(false), 4000); } show(); });
     v.addEventListener('waiting', () => say('Loading…'));
     v.addEventListener('pause', () => { show(); save(false); });
     v.addEventListener('ended', () => close(true));
-    v.addEventListener('error', () => { say('This TV could not play this version (its picture or sound format is not supported). Press Back, then pick another version from the info page.'); box.classList.add('ui'); });
+    v.addEventListener('error', () => { say('This TV could not play this version (its picture or sound format is not supported). ' + (isAndroid ? 'Press OK to open it in VLC, or Back to pick another version.' : 'Press Back, then pick another version from the info page.')); vlcOffer = isAndroid; box.classList.add('ui'); });
     v.addEventListener('loadedmetadata', () => { if (start > 0 && isFinite(v.duration) && start < v.duration - 30) { try { v.currentTime = Math.max(0, start - 5); } catch (e) {} } });
     say('Loading…'); show();
     v.src = url;
@@ -1046,7 +1056,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     try { name = String(JSON.parse(body || '{}').name || ''); } catch (e) {}
     if (useOwn()) { ownPlay(type, id, url, name); return { ok: true }; }
     try { await timeout(noteStarted(type, id, name), 2500); } catch (e) {}
-    const href = playerLink(url);
+    let fname = name;
+    const em = id.match(/^tt\d+:(\d+):(\d+)$/);
+    if (em) fname = name + ' S' + String(em[1]).padStart(2, '0') + 'E' + String(em[2]).padStart(2, '0');
+    else { let sb = ''; try { sb = String(JSON.parse(body || '{}').sub || ''); } catch (e) {} if (/^\d{4}/.test(sb)) fname = name + ' (' + sb.slice(0, 4) + ')'; }
+    const href = playerLink(url, fname, +q.get('t') || 0);
     showOpenBar(href, url);
     try { window.AtriumOpen(href); } catch (e) {}
     return { ok: true };
@@ -1075,6 +1089,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     noteDownload(b, 'vlc');
     return { ok: true };
   }
+  window.AtriumDlMax = () => +mem.get('atrium.m.dlmax', '1080') === 2160 ? 2160 : 1080;
   const dlTo = () => String(mem.get('atrium.m.dlto', 'files')) === 'vlc' ? 'vlc' : 'files';
   window.AtriumDlTo = dlTo;
   window.AtriumSave = (url, name) => {
@@ -1096,7 +1111,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       const id = String(b.id || ''), root = rootId(id), title = String(b.title || '').slice(0, 120);
       if (!id || !root || !title) return;
       const l = dlList().filter(x => x.id !== id);
-      l.unshift({ id: id, root: root, type: String(b.type || 'movie'), title: title, sub: String(b.sub || '').slice(0, 80), q: String(b.q || '').slice(0, 60), via: via === 'vlc' ? 'vlc' : 'files', at: Date.now() });
+      l.unshift({ id: id, root: root, type: String(b.type || 'movie'), title: title, file: String(b.name || '').slice(0, 150), folder: String(b.folder || '').slice(0, 150), sub: String(b.sub || '').slice(0, 80), q: String(b.q || '').slice(0, 60), via: via === 'vlc' ? 'vlc' : 'files', at: Date.now() });
       dlSave(l);
     } catch (e) {}
   }
@@ -1341,10 +1356,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   function tvCrypto(code) {
     return tvMemo[code] || (tvMemo[code] = (async () => {
       const enc = new TextEncoder();
-      const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
-      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.encode('atrium-tv-key'), iterations: 100000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-      const h = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode('atrium-tv-topic:' + code)));
-      return { key: key, topic: 'atrium-' + Array.from(h.slice(0, 12), b => b.toString(16).padStart(2, '0')).join('') };
+      const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveBits']);
+      // one slow derivation gives both the key and the name of the message, so the name tells nobody a cheap way to test codes
+      const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode('atrium-tv-v3'), iterations: 100000, hash: 'SHA-256' }, base, 384));
+      const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+      return { key: key, topic: 'atrium-t3-' + Array.from(bits.slice(32, 44), b => b.toString(16).padStart(2, '0')).join('') };
     })());
   }
   async function tvSend(code, payload) {
@@ -1427,9 +1443,9 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       '<label>Sharpest version to play<select id="suMax"><option value="2160">4K when there is one</option><option value="1080">1080p at most</option></select></label>' +
       '<label>Trailers behind the banner<select id="suTrail"><option value="1">On</option><option value="0">Off (lighter, steadier on a phone or TV)</option></select></label>' +
       (isTV && /Tizen/.test(ua) ? '<p><button class="btn more" id="suAv">Samsung player test</button></p>' : '') +
-      (isIOS && !isTV ? '<h3>Downloads</h3><label>Save downloads to<select id="suDlTo"><option value="files">Files (Safari downloads them: Files, Downloads)</option><option value="vlc">VLC (its own library)</option></select></label>' : '') +
+      (isIOS && !isTV ? '<h3>Downloads</h3><label>Save downloads to<select id="suDlTo"><option value="files">Files (Safari downloads them: Files, Downloads)</option><option value="vlc">VLC (its own library)</option></select></label><label>Download quality<select id="suDlMax"><option value="1080">1080p at most (smaller files)</option><option value="2160">4K when there is one (very large)</option></select></label>' : '') +
       (isIOS && !isTV && dlList().length ? '<h3>My downloads <small>' + dlList().length + ' started from this device (the list under My list)</small></h3><button class="btn more" id="suDlClear">Clear this list</button>' : '') +
-      '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (VLC, or Atrium\'s own player on a Samsung or LG TV)</option><option value="vlc">VLC</option><option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos open in VLC. Install VLC on this TV first; set its audio and subtitle languages in VLC\'s own settings. Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC. Install VLC from the App Store first; set its audio and subtitle languages in VLC\'s own settings.') + '</p>' +
+      '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (' + (isTV ? 'Atrium\'s own player on a TV' : 'VLC') + ')</option><option value="vlc">VLC</option>' + (isIOS && !isTV ? '<option value="infuse">Infuse</option>' : '') + '<option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos play in Atrium\'s own player, which remembers where you stopped on every device. If a version cannot play on this TV, ' + (isAndroid ? 'press OK to try it in VLC (install VLC on the TV for that), or Back to pick another.' : 'press Back to pick another.') + ' Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC (or Infuse if you choose it here). Install the player from the App Store first; set its audio and subtitle languages in its own settings. Infuse starts where Atrium last saw you stop; Atrium cannot see where you stop in either player.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
       '<div class="msg" id="suMsg"></div>' +
@@ -1439,6 +1455,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
     $('#suPlayer').value = playerPref();
     if ($('#suDlTo')) $('#suDlTo').value = dlTo();
+    if ($('#suDlMax')) $('#suDlMax').value = String(window.AtriumDlMax());
     $('#suClose').onclick = () => box.remove();
     if ($('#suDlClear')) $('#suDlClear').onclick = () => { try { localStorage.removeItem(DLS); } catch (e) {} $('#suDlClear').textContent = 'Cleared'; $('#suDlClear').disabled = true; };
     if (first) $('#suClose').style.display = 'none';
@@ -1450,6 +1467,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       mem.set(K.max, $('#suMax').value);
       mem.set('atrium.m.player', $('#suPlayer').value);
       if ($('#suDlTo')) mem.set('atrium.m.dlto', $('#suDlTo').value);
+      if ($('#suDlMax')) mem.set('atrium.m.dlmax', $('#suDlMax').value);
       try { localStorage.setItem('jey.trailers', $('#suTrail').value === '0' ? 'false' : 'true'); } catch (e) {}
       return true;
     };
@@ -1518,7 +1536,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   function something() {
     const on = id => { const e = document.getElementById(id); return !!e && e.classList.contains('on'); };
     const q = document.getElementById('q');
-    return on('peek') || on('launch') || on('catMenu') || on('veil') || !!document.getElementById('setup') || !!(q && q.value);
+    return on('peek') || on('launch') || on('catMenu') || on('veil') || !!document.getElementById('setup') || !!document.getElementById('vp') || !!(q && q.value);
   }
   function press(key, target) {
     const ev = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
@@ -3743,8 +3761,9 @@ async function download(type, id, info, stream) {
     let s = stream;
     if (!s) {
       const list = await getStreams(type, id);
-      s = list.find(isCached);
-      if (!s) { toast(list.length ? 'No version of this one is ready to download yet.' : 'No stream found for this one.', { ms: 5000 }); return; }
+      const cap = window.AtriumDlMax ? window.AtriumDlMax() : 2160, big = x => { const t = String(x.name || '') + ' ' + String(x.title || x.description || '') + ' ' + String((x.behaviorHints || {}).filename || ''); return /2160p|\b4k\b/i.test(t) || (/uhd/i.test(t) && !/1080p/i.test(t)); };
+      s = list.find(x => isCached(x) && (cap >= 2160 || !big(x)));
+      if (!s) { toast(list.length ? (list.some(isCached) ? 'Only a 4K version is ready. Choose it from the list of versions, or allow 4K in Settings.' : 'No version of this one is ready to download yet.') : 'No stream found for this one.', { ms: 5000 }); return; }
     }
     const year = String(info.sub || '').slice(0, 4);
     const body = { type: type, id: id, n: s.n, title: info.name || '', sub: info.sub || '', folder: info.folder || '',
@@ -3891,7 +3910,9 @@ function downloadsList() {
     open.onclick = () => { try { window.AtriumOpen(vlc ? 'vlc://' : 'shareddocuments://'); } catch (e) {} };
     const x = el('<button class="rb" title="Remove from this list (the file itself stays where it was saved)" aria-label="Remove">' + I.close + '</button>');
     x.onclick = () => { window.AtriumDownloadRemove(d.id); row.remove(); if (!$('.dl', box)) sec.remove(); };
-    $('.acts', row).appendChild(open); $('.acts', row).appendChild(x);
+    const again = el('<button class="btn more" title="Download this one again, for example when the file was deleted">Download again</button>');
+    again.onclick = () => download(d.type, d.id, { name: d.title, sub: d.sub, folder: d.folder || '', file: d.file || '' });
+    $('.acts', row).appendChild(open); $('.acts', row).appendChild(again); $('.acts', row).appendChild(x);
     box.appendChild(row);
   });
   return sec;
