@@ -559,6 +559,7 @@ html.tv .credit{padding-bottom:5vh}
   #hero p{font-size:1.25rem;-webkit-line-clamp:2;margin-bottom:1.3rem}
   /* a wide, short screen (the outside of a folding phone held sideways): a compact banner so the title and buttons show */
   @media (max-height:560px){ #hero .info{padding-bottom:5rem} #hero h1{font-size:3.2rem} #hero p{-webkit-line-clamp:1;margin-bottom:.9rem} #hero .logo{max-height:5rem} #hero .dots{bottom:2.2rem} }
+  @media (max-height:420px){ #hero{padding-top:min(70vw,26vh)} #hero .art,#hero .vid{height:min(78vw,30vh)} #hero p{display:none} #hero .info{padding-bottom:3rem} #hero h1{font-size:2.8rem} #hero .dots{display:none} }
   #hero .btns{flex-wrap:nowrap}
   #hero .btn{flex:1;justify-content:center;padding:0 1rem}
   #hero .dots{right:0;left:0;justify-content:center;bottom:6.5rem}
@@ -751,7 +752,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-26 16:57 UTC';
+  const BUILD = '2026-10-26 17:09 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1452,6 +1453,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       (isIOS && !isTV && dlList().length ? '<h3>My downloads <small>' + dlList().length + ' started from this device (the list under My list)</small></h3><button class="btn more" id="suDlClear">Clear this list</button>' : '') +
       '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (' + (isTV ? 'Atrium\'s own player on a TV' : 'VLC') + ')</option><option value="vlc">VLC</option>' + (isIOS && !isTV ? '<option value="infuse">Infuse</option>' : '') + '<option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos play in Atrium\'s own player, which remembers where you stopped on every device. If a version cannot play on this TV, ' + (isAndroid ? 'press OK to try it in VLC (install VLC on the TV for that), or Back to pick another.' : 'press Back to pick another.') + ' Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC (or Infuse if you choose it here). Install the player from the App Store first; set its audio and subtitle languages in its own settings. Infuse starts where Atrium last saw you stop; Atrium cannot see where you stop in either player.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
+      (isIOS && !isTV ? '<p class="ver" id="suFold">' + foldInfo() + '</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
       '<div class="msg" id="suMsg"></div>' +
       '<div class="foot">' + (signed ? '<button class="btn more" id="suOut">Sign out</button>' : '') + '<button class="btn play" id="suDone">Save</button></div></div>';
@@ -1542,6 +1544,14 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const on = id => { const e = document.getElementById(id); return !!e && e.classList.contains('on'); };
     const q = document.getElementById('q');
     return on('peek') || on('launch') || on('catMenu') || on('veil') || !!document.getElementById('setup') || !!document.getElementById('vp') || !!(q && q.value);
+  }
+  // What this screen reports about a folding phone (Safari 27.1 on an iPhone Duo has two switches for it under Settings, Apps, Safari, Advanced, Feature Flags).
+  function foldInfo() {
+    let segs = 'not available', post = 'not available';
+    try { if (window.viewport && viewport.segments) segs = String(viewport.segments.length); } catch (e) {}
+    try { if (navigator.devicePosture) post = String(navigator.devicePosture.type); } catch (e) {}
+    const app = (matchMedia('(display-mode: standalone)').matches || navigator.standalone === true) ? 'Home Screen app' : 'Safari';
+    return 'Screen ' + innerWidth + '×' + innerHeight + ' · fold sensors: segments ' + segs + ', posture ' + post + ' · ' + app;
   }
   let lastBack = 0;
   function hint(text) {
