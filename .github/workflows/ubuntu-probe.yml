@@ -1,0 +1,16 @@
+name: ubuntu-probe
+on:
+  push:
+    branches: [ios-app]
+    paths: ['.github/workflows/ubuntu-probe.yml']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name ci; git config user.email ci@example.com
+          git checkout --orphan ci-probe-tmp; git rm -rf -q . ; mkdir -p logs; echo "ubuntu ok $(date)" > logs/ubuntu.txt
+          git add logs; git commit -q -m "ubuntu probe"; git push -f origin HEAD:ci-ubuntu
