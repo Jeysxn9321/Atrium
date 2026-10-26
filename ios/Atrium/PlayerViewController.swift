@@ -337,7 +337,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
 
     // MARK: VLC
 
-    func mediaPlayerStateChanged(_ aNotification: Notification!) {
+    func mediaPlayerStateChanged(_ aNotification: Notification) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, !self.closing else { return }
             switch self.player.state {
