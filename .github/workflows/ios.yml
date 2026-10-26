@@ -1,5 +1,6 @@
 name: ios
 on:
+  workflow_dispatch:
   push:
     branches: [ios-app]
     paths: ['ios/**', '.github/workflows/ios.yml']
@@ -7,7 +8,7 @@ permissions:
   contents: write
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 60
     env:
       COCOAPODS_DISABLE_STATS: "1"
