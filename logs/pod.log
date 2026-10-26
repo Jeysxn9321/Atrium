@@ -1,0 +1,9 @@
+Analyzing dependencies
+Adding spec repo `trunk` with CDN `https://cdn.cocoapods.org/`
+Downloading dependencies
+Installing MobileVLCKit (3.7.4)
+Generating Pods project
+Integrating client project
+
+[!] Please close any current Xcode sessions and use `Atrium.xcworkspace` for this project from now on.
+Pod installation complete! There is 1 dependency from the Podfile and 1 total pod installed.
