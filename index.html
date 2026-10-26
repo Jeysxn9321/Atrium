@@ -752,7 +752,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-26 17:09 UTC';
+  const BUILD = '2026-10-26 17:36 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -774,6 +774,9 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   const ua = navigator.userAgent || '';
   const isIOS = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
   const isAndroid = /Android/.test(ua);
+  // inside the Atrium iPhone app (a web view with a player built in): it says so in its browser name
+  const isApp = /AtriumApp/.test(ua) && !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.atrium);
+  const appSend = m => { try { window.webkit.messageHandlers.atrium.postMessage(m); return true; } catch (e) { return false; } };
   // a television: known by its browser name, or told once with ?tv=1 (the Android TV app opens the address that way); ?tv=0 undoes it
   const isTV = (() => {
     try { const q = new URLSearchParams(location.search).get('tv'); if (q === '1' || q === '0') mem.set('atrium.m.tv', q); } catch (e) {}
@@ -942,6 +945,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // page itself. The position is written back to Stremio, so Continue watching follows on every device.
   const playerPref = () => { const v = String(mem.get('atrium.m.player', 'auto')); return v === 'vlc' || v === 'own' || (v === 'infuse' && isIOS && !isTV) ? v : 'auto'; };
   const useOwn = () => { const v = playerPref(); return v === 'own' || (v === 'auto' && isTV); };
+  // in the iPhone app the player built into the app plays (VLC's engine: every format, English sound by default)
+  const useNative = () => isApp && playerPref() === 'auto';
   // What these televisions cannot decode: DTS and TrueHD sound. A version with only that plays without sound, so it is not offered
   // when another version exists.
   const badSound = s => { const t = ((s.name || '') + ' ' + (s.title || '') + ' ' + ((s.behaviorHints && s.behaviorHints.filename) || '')); return /DTS|TrueHD/i.test(t) && !/DD\+|DDP|EAC3|E-AC-3|AC3|\bAAC|DD5/i.test(t); };
@@ -1050,6 +1055,44 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     v.play().catch(() => {});
   }
 
+  // The player inside the iPhone app. It plays; this page keeps Stremio told where you are (every 20 seconds and when it closes).
+  async function nativePlay(type, videoId, url, name, sub) {
+    if (ownOpen) return;
+    ownOpen = true;
+    const root = rootId(videoId);
+    let item = null, start = 0;
+    try {
+      const got = await timeout(stremio('datastoreGet', { authKey: stremioKey(), collection: 'libraryItem', ids: [root], all: false }), 3000);
+      item = got && Array.isArray(got.result) ? (got.result.find(x => x && x._id === root) || null) : null;
+    } catch (e) {}
+    if (item && item.state && +item.state.timeOffset > 5000 && (item.state.video_id === videoId || (type === 'movie' && (!item.state.video_id || item.state.video_id === root)))) start = item.state.timeOffset / 1000;
+    let lastTick = Date.now(), busy = false;
+    const save = async (pos, dur, ended) => {
+      if (busy || (!ended && pos < 3)) return;
+      busy = true;
+      try {
+        const now = new Date().toISOString(), done = ended || (dur > 0 && pos >= dur * 0.92);
+        const played = Math.max(0, Math.min(60000, Date.now() - lastTick)); lastTick = Date.now();
+        const old = item && item.state && typeof item.state === 'object' ? item.state : {};
+        const base = item || { _id: root, name: name || root, type: type, poster: /^tt/.test(root) ? 'https://images.metahub.space/poster/small/' + root + '/img' : null, posterShape: 'poster',
+          removed: true, temp: true, _ctime: now, behaviorHints: { defaultVideoId: null, featuredVideoId: null, hasScheduledVideos: false } };
+        const st = Object.assign({ timeWatched: 0, overallTimeWatched: 0, timesWatched: 0, flaggedWatched: 0, watched: '', noNotif: false }, old, {
+          video_id: videoId, lastWatched: now, timeOffset: done ? 0 : Math.round(pos * 1000), duration: Math.round(dur * 1000) || old.duration || 0,
+          timeWatched: (+old.timeWatched || 0) + played, overallTimeWatched: (+old.overallTimeWatched || 0) + played });
+        if (done) { st.timesWatched = (+old.timesWatched || 0) + 1; if (type === 'movie') st.flaggedWatched = 1; }
+        const next = Object.assign({}, base, { _mtime: now, state: st });
+        try { const r = await putLibrary(next); if (!r || !r.error) item = next; } catch (e) {}
+      } finally { busy = false; }
+    };
+    window.AtriumNative = window.AtriumNative || {};
+    window.AtriumNative.on = (event, d) => {
+      if (event === 'progress' && d) save(+d.pos || 0, +d.dur || 0, !!d.ended);
+      else if (event === 'closed') { ownOpen = false; window.AtriumNative.on = null; }
+    };
+    const lang = String(mem.get('atrium.m.lang', 'eng'));
+    if (!appSend({ cmd: 'play', url: url, title: [name, sub].filter(Boolean).join(' · '), start: start, lang: lang })) { ownOpen = false; window.AtriumNative.on = null; }
+  }
+
   // Tests replace this one to see what would be opened.
   window.AtriumOpen = href => { location.href = href; };
   async function playStream(q, body) {
@@ -1058,8 +1101,9 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     if (!urls || !(n >= 0) || n >= urls.length) return { ok: false, error: 'unknown stream' };
     const url = String(urls[n]);
     if (!/^https:\/\/[A-Za-z0-9.\-]+\//.test(url) || /["\s]/.test(url)) return { ok: false, error: 'bad address' };
-    let name = '';
-    try { name = String(JSON.parse(body || '{}').name || ''); } catch (e) {}
+    let name = '', subline = '';
+    try { const j = JSON.parse(body || '{}'); name = String(j.name || ''); subline = String(j.sub || ''); } catch (e) {}
+    if (useNative()) { nativePlay(type, id, url, name, subline); return { ok: true }; }
     if (useOwn()) { ownPlay(type, id, url, name); return { ok: true }; }
     try { await timeout(noteStarted(type, id, name), 2500); } catch (e) {}
     let fname = name;
@@ -1099,6 +1143,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   const dlTo = () => String(mem.get('atrium.m.dlto', 'files')) === 'vlc' ? 'vlc' : 'files';
   window.AtriumDlTo = dlTo;
   window.AtriumSave = (url, name) => {
+    if (isApp && /^https:\/\//.test(url)) { appSend({ cmd: 'open', url: url }); return; }
     // From the Home Screen app a link opens in a small in-app Safari sheet that does not offer the download (seen on a real iPhone);
     // x-safari-https:// hands the address to the full Safari app, which has the download manager.
     const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -1451,7 +1496,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       (isTV && /Tizen/.test(ua) ? '<p><button class="btn more" id="suAv">Samsung player test</button></p>' : '') +
       (isIOS && !isTV ? '<h3>Downloads</h3><label>Save downloads to<select id="suDlTo"><option value="files">Files (Safari downloads them: Files, Downloads)</option><option value="vlc">VLC (its own library)</option></select></label><label>Download quality<select id="suDlMax"><option value="1080">1080p at most (smaller files)</option><option value="2160">4K when there is one (very large)</option></select></label>' : '') +
       (isIOS && !isTV && dlList().length ? '<h3>My downloads <small>' + dlList().length + ' started from this device (the list under My list)</small></h3><button class="btn more" id="suDlClear">Clear this list</button>' : '') +
-      '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (' + (isTV ? 'Atrium\'s own player on a TV' : 'VLC') + ')</option><option value="vlc">VLC</option>' + (isIOS && !isTV ? '<option value="infuse">Infuse</option>' : '') + '<option value="own">Atrium\'s own player</option></select></label><p>' + (isTV ? 'Videos play in Atrium\'s own player, which remembers where you stopped on every device. If a version cannot play on this TV, ' + (isAndroid ? 'press OK to try it in VLC (install VLC on the TV for that), or Back to pick another.' : 'press Back to pick another.') + ' Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC (or Infuse if you choose it here). Install the player from the App Store first; set its audio and subtitle languages in its own settings. Infuse starts where Atrium last saw you stop; Atrium cannot see where you stop in either player.') + '</p>' +
+      '<h3>Player</h3><label>Play videos in<select id="suPlayer"><option value="auto">Automatic (' + (isTV ? 'Atrium\'s own player on a TV' : isApp ? 'Atrium\'s player in this app' : 'VLC') + ')</option><option value="vlc">VLC</option>' + (isIOS && !isTV ? '<option value="infuse">Infuse</option>' : '') + '<option value="own">Atrium\'s own player</option></select></label>' + (isApp ? '<label>Sound language<select id="suLang"><option value="eng">English</option><option value="fre">French</option><option value="spa">Spanish</option><option value="jpn">Japanese</option></select></label>' : '') + '<p>' + (isApp ? 'Videos play in the player built into this app: it plays every format, starts on the sound language above (when the version has it), and remembers where you stopped on every device. Choose VLC or Infuse above to use those apps instead.' : isTV ? 'Videos play in Atrium\'s own player, which remembers where you stopped on every device. If a version cannot play on this TV, ' + (isAndroid ? 'press OK to try it in VLC (install VLC on the TV for that), or Back to pick another.' : 'press Back to pick another.') + ' Remote: arrows to move, OK to choose, Back to close, Info (or the menu key) for the info page.' : 'Videos open in VLC (or Infuse if you choose it here). Install the player from the App Store first; set its audio and subtitle languages in its own settings. Infuse starts where Atrium last saw you stop; Atrium cannot see where you stop in either player.') + '</p>' +
       (isIOS && !standalone && !first ? '<p class="hint">You are in Safari. For a sign-in that lasts, install Atrium: tap Share, then <b>Add to Home Screen</b>, and sign in in the Home Screen app.</p>' : '') +
       (isIOS && !isTV ? '<p class="ver" id="suFold">' + foldInfo() + '</p>' : '') +
       '<p class="ver">Version ' + BUILD + ' · <a href="#" id="suReload">load the latest</a></p>' +
@@ -1461,6 +1506,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const $ = s => box.querySelector(s), say = (t, bad) => { const m = $('#suMsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
     $('#suMax').value = +mem.get(K.max, '2160') === 1080 ? '1080' : '2160';
     $('#suPlayer').value = playerPref();
+    if ($('#suLang')) $('#suLang').value = String(mem.get('atrium.m.lang', 'eng'));
     if ($('#suDlTo')) $('#suDlTo').value = dlTo();
     if ($('#suDlMax')) $('#suDlMax').value = String(window.AtriumDlMax());
     $('#suClose').onclick = () => box.remove();
@@ -1473,6 +1519,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       if (t) { if (!/^[A-Za-z0-9._\-]{20,}$/.test(t)) { say('That TMDB key does not look right.', true); return false; } mem.set(K.tmdb, t); }
       mem.set(K.max, $('#suMax').value);
       mem.set('atrium.m.player', $('#suPlayer').value);
+      if ($('#suLang')) mem.set('atrium.m.lang', $('#suLang').value);
       if ($('#suDlTo')) mem.set('atrium.m.dlto', $('#suDlTo').value);
       if ($('#suDlMax')) mem.set('atrium.m.dlmax', $('#suDlMax').value);
       try { localStorage.setItem('jey.trailers', $('#suTrail').value === '0' ? 'false' : 'true'); } catch (e) {}
