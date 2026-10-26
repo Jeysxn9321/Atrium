@@ -535,7 +535,7 @@ html.tv .credit{padding-bottom:5vh}
   #catBtn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #catMenu{top:calc(5rem + env(safe-area-inset-top))!important;left:var(--pad)!important;right:var(--pad);column-count:2;max-height:70vh;overflow-y:auto}
   #catMenu button{font-size:1.4rem;padding:.8rem .2rem}
-  .tb{width:3.2rem;height:3.2rem}
+  .tb{width:max(3.2rem,40px);height:max(3.2rem,40px)}
   .tb svg{width:1.9rem;height:1.9rem}
 
   #tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;gap:0;justify-content:space-around;align-items:stretch;
@@ -548,8 +548,8 @@ html.tv .credit{padding-bottom:5vh}
   #toast{bottom:calc(env(safe-area-inset-bottom) + 6.5rem);font-size:1.3rem;max-width:92vw}
 
   /* banner: the picture (and the trailer) on top, the title and the buttons under it */
-  #hero{height:auto;min-height:0;padding-top:70vw}
-  #hero .art,#hero .vid{left:0;right:0;width:100%;height:78vw;
+  #hero{height:auto;min-height:0;padding-top:min(70vw,38vh)}
+  #hero .art,#hero .vid{left:0;right:0;width:100%;height:min(78vw,42vh);
     -webkit-mask-image:linear-gradient(180deg,#000 62%,#0000 100%);mask-image:linear-gradient(180deg,#000 62%,#0000 100%)}
   #hero .shade{background:linear-gradient(0deg,var(--bg) 0,#0b0b0d00 45%),linear-gradient(180deg,#0b0b0d99 0,#0b0b0d00 22%)}
   #hero .info{position:relative;left:auto;bottom:auto;width:auto;padding:0 var(--pad) 8rem;text-align:center}
@@ -557,6 +557,8 @@ html.tv .credit{padding-bottom:5vh}
   #hero h1{font-size:4.2rem}
   #hero .metaline{justify-content:center;font-size:1.2rem}
   #hero p{font-size:1.25rem;-webkit-line-clamp:2;margin-bottom:1.3rem}
+  /* a wide, short screen (the outside of a folding phone held sideways): a compact banner so the title and buttons show */
+  @media (max-height:560px){ #hero .info{padding-bottom:5rem} #hero h1{font-size:3.2rem} #hero p{-webkit-line-clamp:1;margin-bottom:.9rem} #hero .logo{max-height:5rem} #hero .dots{bottom:2.2rem} }
   #hero .btns{flex-wrap:nowrap}
   #hero .btn{flex:1;justify-content:center;padding:0 1rem}
   #hero .dots{right:0;left:0;justify-content:center;bottom:6.5rem}
@@ -749,7 +751,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-11 15:10 UTC';
+  const BUILD = '2026-10-26 16:57 UTC';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
