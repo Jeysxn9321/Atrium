@@ -1,0 +1,64 @@
+name: ios
+on:
+  push:
+    branches: [ios-app]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      COCOAPODS_DISABLE_STATS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versions
+        run: |
+          mkdir -p logs
+          { xcodebuild -version; swift --version; sw_vers; } 2>&1 | tee logs/versions.txt
+      - name: Generate the project
+        run: |
+          set -o pipefail
+          brew install xcodegen 2>&1 | tail -3
+          cd ios
+          xcodegen generate 2>&1 | tee ../logs/xcodegen.log
+      - name: Install VLC
+        run: |
+          set -o pipefail
+          cd ios
+          pod install 2>&1 | tee ../logs/pod.log
+      - name: Build
+        run: |
+          set -o pipefail
+          cd ios
+          xcodebuild -workspace Atrium.xcworkspace -scheme Atrium -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -archivePath build/Atrium.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} archive 2>&1 | tee ../logs/build.log
+      - name: Package the app
+        run: |
+          cd ios/build/Atrium.xcarchive/Products/Applications
+          rm -rf Payload && mkdir Payload && cp -R Atrium.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/Atrium.ipa" Payload
+          ls -la "$GITHUB_WORKSPACE/Atrium.ipa" | tee "$GITHUB_WORKSPACE/logs/ipa.txt"
+      - name: Publish the app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest -y --cleanup-tag || true
+          gh release create ios-latest Atrium.ipa --target ${{ github.sha }} --title "Atrium for iPhone (build ${{ github.run_number }})" \
+            --notes "Unsigned app. Open it with AltStore (or Sideloadly) on your phone; it signs it with your Apple ID."
+      - name: Publish the log
+        if: always()
+        run: |
+          mkdir -p /tmp/out
+          for f in logs/*; do tail -n 400 "$f" > "/tmp/out/$(basename "$f")"; done
+          grep -E "error:|warning: (unre|cannot)|\*\* ARCHIVE" logs/build.log > /tmp/out/build-errors.txt 2>/dev/null || true
+          git config user.name ci; git config user.email ci@example.com
+          git checkout --orphan ci-logs-tmp
+          git rm -rf -q . || true
+          mkdir -p logs && cp /tmp/out/* logs/
+          git add logs
+          git commit -q -m "build log for ${{ github.sha }}"
+          git push -f origin HEAD:ci-logs
