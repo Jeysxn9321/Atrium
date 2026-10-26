@@ -8,6 +8,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     static let home = URL(string: "https://jeysxn9321.github.io/Atrium/")!
     static let host = "jeysxn9321.github.io"
 
+    static let okSchemes: Set<String> = ["https", "http", "vlc-x-callback", "infuse", "shareddocuments"]
     private var web: WKWebView!
     private weak var player: PlayerViewController?
 
@@ -47,6 +48,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     // MARK: messages from the page
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        // only the Atrium page itself may ask for things, not a frame inside it (a trailer, an ad)
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == WebViewController.host else { return }
         guard let body = message.body as? [String: Any], let cmd = body["cmd"] as? String else { return }
         switch cmd {
         case "play":
@@ -61,9 +64,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             p.onClose = { [weak self] in self?.tell("closed", [:]) }
             p.modalPresentationStyle = .fullScreen
             player = p
+            web.pauseAllMediaPlayback { }
             present(p, animated: true)
         case "open":
-            if let s = body["url"] as? String, let url = URL(string: s) { UIApplication.shared.open(url) }
+            if let s = body["url"] as? String, let url = URL(string: s), Self.okSchemes.contains(url.scheme ?? "") { UIApplication.shared.open(url) }
         default:
             break
         }
@@ -89,8 +93,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             decisionHandler(.cancel)
             return
         }
-        // vlc-x-callback:, infuse:, shareddocuments: and the like belong to other apps
-        UIApplication.shared.open(url)
+        // vlc-x-callback:, infuse:, shareddocuments: belong to other apps, and only when a person tapped (main frame)
+        if Self.okSchemes.contains(scheme) && navigationAction.targetFrame?.isMainFrame != false { UIApplication.shared.open(url) }
         decisionHandler(.cancel)
     }
 
@@ -102,7 +106,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        webView.reload()
+        if webView.url == nil { webView.load(URLRequest(url: WebViewController.home)) } else { webView.reload() }
     }
 }
 

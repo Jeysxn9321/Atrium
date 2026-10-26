@@ -38,6 +38,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private var closing = false
     private var lastSent = Date.distantPast
     private var fill = false
+    private var lastPos = 0.0
+    private var startedAt = Date.distantPast
 
     init(url: URL, title: String, start: Double, audioLanguage: String) {
         self.url = url
@@ -83,6 +85,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         player.drawable = videoView
         let media = VLCMedia(url: url)
         media.addOption(":network-caching=3000")
+        if startAt > 5 { media.addOption(":start-time=\(Int(startAt))") }   // the player itself starts there: no seek, no jump back to 0
+        lastPos = max(0, startAt)
         player.media = media
         player.play()
         UIApplication.shared.isIdleTimerDisabled = true
@@ -229,15 +233,21 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         fill.toggle()
         // fill the screen (the edges are cropped) or fit the whole picture
         if fill {
-            let size = view.bounds.size
-            player.videoCropGeometry = nil
-            player.scaleFactor = 0
-            player.videoAspectRatio = UnsafeMutablePointer<Int8>(mutating: (String(format: "%d:%d", Int(size.width), Int(size.height)) as NSString).utf8String)
+            applyFill()
         } else {
-            player.videoAspectRatio = nil
+            player.videoCropGeometry = nil
             player.scaleFactor = 0
         }
         showControls()
+    }
+    private func applyFill() {
+        let size = view.bounds.size
+        guard fill, size.width > 0, size.height > 0 else { return }
+        "\(Int(size.width)):\(Int(size.height))".withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
+    }
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.applyFill() }
     }
     @objc private func scrubStarted() { scrubbing = true; hideWork?.cancel() }
     @objc private func scrubMoved() {
@@ -277,13 +287,16 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             remainingLabel.text = len > 0 ? "-" + clock(max(0, len - pos)) : "--:--"
         }
         updatePlayIcon()
+        if started && pos > 1 { lastPos = pos }
+        if started && !pickedAudio && Date().timeIntervalSince(startedAt) < 12 && Date().timeIntervalSince(startedAt) > 1 { pickLanguage(); rebuildMenus() }
         if started && player.isPlaying && Date().timeIntervalSince(lastSent) > 20 { send(ended: false) }
     }
 
     private func send(ended: Bool) {
         lastSent = Date()
         guard started else { return }
-        onProgress?(positionSeconds(), lengthSeconds(), ended)
+        let pos = positionSeconds()
+        onProgress?(pos > 1 ? pos : lastPos, lengthSeconds(), ended)
     }
 
     // MARK: sound tracks and subtitles
@@ -312,6 +325,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         if let names = player.audioTrackNames as? [String], let ids = player.audioTrackIndexes as? [NSNumber], names.count == ids.count {
             for (i, n) in names.enumerated() {
                 let id = ids[i].int32Value
+                if id < 0 { continue }
                 audio.append(UIAction(title: n, state: id == player.currentAudioTrackIndex ? .on : .off) { [weak self] _ in
                     self?.player.currentAudioTrackIndex = id
                     self?.rebuildMenus()
@@ -345,7 +359,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
                 self.messageLabel.text = ""
                 if !self.started {
                     self.started = true
-                    if self.startAt > 5 { self.player.time = VLCTime(int: Int32(self.startAt * 1000)) }
+                    self.startedAt = Date()
+                    self.lastSent = Date()   // the first report comes 20 s in, after the resume point has landed
                     self.player.currentVideoSubTitleIndex = -1
                 }
                 // the tracks are known a moment after playing starts
@@ -358,7 +373,11 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             case .paused:
                 self.send(ended: false)
             case .ended, .stopped:
-                if self.started { self.finish(ended: true) }
+                if self.started {
+                    let len = self.lengthSeconds()
+                    let real = self.player.state == .ended && len > 0 && self.lastPos > len - 120
+                    self.finish(ended: real)
+                }
             case .error:
                 self.messageLabel.text = "This version could not be played.\nClose and pick another version."
                 self.showControls()
@@ -376,11 +395,15 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         closing = true
         ticker?.invalidate()
         hideWork?.cancel()
-        if started { onProgress?(positionSeconds(), lengthSeconds(), ended) }
+        if started {
+            let pos = positionSeconds()
+            onProgress?(pos > 1 ? pos : lastPos, lengthSeconds(), ended)
+        }
         player.delegate = nil
-        player.stop()
+        let p = player
+        DispatchQueue.global().async { p.stop() }   // a stalled stream must not freeze the screen
         UIApplication.shared.isIdleTimerDisabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        dismiss(animated: true) { [weak self] in self?.onClose?() }
+        (presentingViewController ?? self).dismiss(animated: true) { [weak self] in self?.onClose?() }
     }
 }
