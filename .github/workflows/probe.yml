@@ -1,0 +1,25 @@
+name: probe
+on:
+  push:
+    branches: [ios-app]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tools
+        run: |
+          mkdir -p /tmp/log
+          { xcodebuild -version; swift --version; which xcodegen pod brew; sw_vers; xcrun simctl list runtimes | head -20; xcodebuild -showsdks | head -20; } > /tmp/log/probe.txt 2>&1 || true
+      - name: publish log
+        if: always()
+        run: |
+          git config user.name ci; git config user.email ci@example.com
+          git fetch origin ci-logs || true
+          git checkout -B ci-logs $(git rev-parse --verify -q origin/ci-logs || echo HEAD)
+          if [ ! -d logs ]; then git rm -rf -q . ; fi
+          mkdir -p logs; cp /tmp/log/* logs/
+          git add logs; git commit -q -m "probe log" || true
+          git push -f origin ci-logs
