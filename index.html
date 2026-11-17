@@ -889,37 +889,38 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return dramaAddons;
   }
   function dramaCandidates(addons, country) {
-    const other = country === 'kr' ? 'jp' : 'kr', picks = [], seen = new Set();
+    const all = country === 'all', other = country === 'kr' ? 'jp' : 'kr', picks = [], seen = new Set();
+    const matches = v => all
+      ? dramaMatch(v, 'kr') || dramaMatch(v, 'jp') || /(?:^|[^a-z])(?:asian|asia|dramacool|kissasian|mydramalist)(?=[^a-z]|$)/i.test(String(v || ''))
+      : dramaMatch(v, country);
     addons.forEach(add => {
       const mf = add.manifest;
       const sourceLabel = String(mf.name || '') + ' ' + String(mf.id || '');
-      const sourceOnly = dramaMatch(sourceLabel, country) && !dramaMatch(sourceLabel, other);
+      const sourceOnly = matches(sourceLabel) && (all || !dramaMatch(sourceLabel, other));
       mf.catalogs.forEach(cat => {
         if (!cat || !cat.id || !/^(series|movie)$/.test(cat.type || '')) return;
         const label = String(cat.name || '') + ' ' + String(cat.id);
-        if (dramaMatch(label, other) && !dramaMatch(label, country)) return;
+        if (!all && dramaMatch(label, other) && !dramaMatch(label, country)) return;
         const extras = Array.isArray(cat.extra) ? cat.extra : [];
         if (extras.some(e => e && e.isRequired && !['genre', 'skip'].includes(e.name))) return;
         const genre = extras.find(e => e && e.name === 'genre');
         const options = genre && Array.isArray(genre.options) ? genre.options : [];
-        const selected = options.find(o => dramaMatch(o, country)) || '';
-        const explicitlyNamed = dramaMatch(label, country);
-        if (!selected && !explicitlyNamed && !sourceOnly) return;
-        if (genre && genre.isRequired && !selected) {
-          const all = options.find(o => /^(all|all genres)$/i.test(o));
-          if (!all) return;
-        }
-        const params = [];
-        if (selected) params.push('genre=' + encodeURIComponent(selected));
-        else if (genre && genre.isRequired) params.push('genre=' + encodeURIComponent(options.find(o => /^(all|all genres)$/i.test(o))));
-        if (extras.some(e => e && e.name === 'skip' && e.isRequired)) params.push('skip=0');
-        const key = add.base + '|' + cat.type + '|' + cat.id + '|' + params.join('&');
-        if (seen.has(key)) return;
-        seen.add(key);
-        picks.push({ add: add, cat: cat, params: params, searchable: extras.some(e => e && e.name === 'search') });
+        const selected = options.filter(o => matches(o));
+        if (!selected.length && !matches(label) && !sourceOnly) return;
+        const fallback = options.find(o => /^(all|all genres)$/i.test(String(o)));
+        const variants = selected.length ? selected : genre && genre.isRequired ? (fallback ? [fallback] : []) : [''];
+        variants.forEach(value => {
+          const params = [];
+          if (value) params.push('genre=' + encodeURIComponent(value));
+          if (extras.some(e => e && e.name === 'skip' && e.isRequired)) params.push('skip=0');
+          const key = add.base + '|' + cat.type + '|' + cat.id + '|' + params.join('&');
+          if (seen.has(key)) return;
+          seen.add(key);
+          picks.push({ add: add, cat: cat, params: params, searchable: extras.some(e => e && e.name === 'search') });
+        });
       });
     });
-    return picks.slice(0, 16);
+    return picks.slice(0, 20);
   }
   async function dramaFetchJSON(url) {
     const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 12000);
@@ -930,7 +931,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     } finally { clearTimeout(timer); }
   }
   async function getDramaCatalogs(country, search) {
-    if (country !== 'kr' && country !== 'jp') return { rows: [], error: 'bad country' };
+    if (!['kr', 'jp', 'all'].includes(country)) return { rows: [], error: 'bad country' };
     if (!stremioKey()) return { rows: [], error: 'not signed in' };
     const query = String(search || '').trim().slice(0, 100);
     const cacheKey = country + '|' + query.toLowerCase();
@@ -2470,15 +2471,7 @@ function dramaShelf(country, query, seq) {
   row._load = async () => {
     let j;
     try {
-      if (country === 'all') {
-        const [kr, jp] = await Promise.all(['kr', 'jp'].map(c =>
-          local('/api/dramas?country=' + c + (query ? '&search=' + encodeURIComponent(query) : '')).catch(() => ({ error: 'unavailable', rows: [] }))));
-        j = { rows: [...(kr.rows || []), ...(jp.rows || [])],
-          matches: (kr.matches || 0) + (jp.matches || 0), failures: (kr.failures || 0) + (jp.failures || 0),
-          error: kr.error && jp.error ? kr.error : null };
-      } else {
-        j = await local('/api/dramas?country=' + country + (query ? '&search=' + encodeURIComponent(query) : ''));
-      }
+      j = await local('/api/dramas?country=' + country + (query ? '&search=' + encodeURIComponent(query) : ''));
     } catch (e) { j = { error: 'unavailable', rows: [] }; }
     if (seq !== renderSeq || !row.isConnected) return;
     strip.innerHTML = '';
