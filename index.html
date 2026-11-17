@@ -972,11 +972,53 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // The page gets the list without the addresses (they contain the TorBox key) and plays a stream
   // by its place in the list, as on the PC.
   const streamUrls = new Map();
+  // Direct HTTPS streams supplied by a drama add-on. Magnet/infoHash-only results cannot
+  // be handed to Atrium's HTTP player and are intentionally not advertised as playable.
+  async function getDramaStreams(type, id) {
+    let installed;
+    try { installed = await installedDramaAddons(); } catch (e) { return { streams: [], error: 'Stremio add-ons unavailable' }; }
+    const root = rootId(id), origin = dramaMetaOrigins.get(type + '/' + root);
+    const matches = installed.filter(add => {
+      const m = add.manifest, resources = Array.isArray(m.resources) ? m.resources : [];
+      return resources.some(r => {
+        if (r !== 'stream' && (!r || r.name !== 'stream')) return false;
+        if (r && typeof r === 'object' && Array.isArray(r.types) && !r.types.includes(type)) return false;
+        const prefixes = r && typeof r === 'object' && Array.isArray(r.idPrefixes) ? r.idPrefixes
+          : Array.isArray(m.idPrefixes) ? m.idPrefixes : [];
+        return !prefixes.length || prefixes.some(p => id.startsWith(String(p)));
+      });
+    });
+    if (origin && !matches.includes(origin.add)) matches.unshift(origin.add);
+    if (origin) matches.sort((a, b) => (a === origin.add ? -1 : b === origin.add ? 1 : 0));
+    const responses = await Promise.all(matches.slice(0, 8).map(async add => {
+      try {
+        const j = await dramaFetchJSON(add.base + '/stream/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '.json');
+        return (Array.isArray(j.streams) ? j.streams : []).filter(z => z && typeof z.url === 'string'
+          && /^https:\/\/[A-Za-z0-9.-]+\//.test(z.url) && !/["\s]/.test(z.url)).slice(0, 25)
+          .map(z => ({ url: z.url, name: String(z.name || add.manifest.name || 'Direct stream'),
+            title: String(z.title || ''), direct: true }));
+      } catch (e) { return []; }
+    }));
+    const urls = [], streams = [];
+    responses.forEach(group => group.forEach(z => {
+      if (urls.includes(z.url)) return;
+      const n = urls.push(z.url) - 1;
+      streams.push({ name: z.name, title: z.title, direct: true, n: n });
+    }));
+    streamUrls.set(type + '/' + id, urls);
+    return { streams: streams, error: streams.length ? '' : 'No direct playable stream was returned by the installed add-ons' };
+  }
+
   async function getStreams(type, id) {
     if (!/^(movie|series|anime)$/.test(type) || !/^[A-Za-z0-9:_\-]+$/.test(id)) return { streams: [], error: 'bad id' };
+    const drama = dramaMetaOrigins.has(type + '/' + rootId(id));
+    if (drama && !/^tt\d+/.test(id)) return getDramaStreams(type, id);
     let base;
-    try { base = await getTorrentio(); } catch (e) { throw new Error('the Stremio account did not answer (' + (e && e.message || e) + ')'); }
-    if (!base) return { streams: [], error: 'no add-on' };
+    try { base = await getTorrentio(); } catch (e) {
+      if (drama) return getDramaStreams(type, id);
+      throw new Error('the Stremio account did not answer (' + (e && e.message || e) + ')');
+    }
+    if (!base) return drama ? getDramaStreams(type, id) : { streams: [], error: 'no add-on' };
     // up to two tries, each cut off after 15 s; the reason is kept so the screen can say what failed
     let j = null, why = '';
     for (let i = 0; i < 2 && !j; i++) {
@@ -988,7 +1030,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
         j = await r.json();
       } catch (e) { why = (e && e.name === 'AbortError') ? 'Torrentio took more than 15 s' : 'could not reach Torrentio (' + (e && e.message || e) + ')'; }
     }
-    if (!j) throw new Error(why);
+    if (!j) {
+      if (drama) return getDramaStreams(type, id);
+      throw new Error(why);
+    }
+    if (drama && !(j.streams || []).length) return getDramaStreams(type, id);
     const urls = [];
     const streams = (j.streams || []).map(s => {
       const c = Object.assign({}, s);
@@ -2999,7 +3045,7 @@ async function versions(type, id, info, box) {
   box.innerHTML = '';
   if (!list.length) { box.innerHTML = '<div class="empty" style="padding:1rem">No stream found.</div>'; return; }
   list.slice(0, 25).forEach(s => {
-    const cached = /\[tb\+\]|instant/i.test(s.name || '');
+    const cached = !!s.direct || /\[tb\+\]|instant/i.test(s.name || '');
     const v = el('<div class="v" tabindex="0"><div class="q' + (cached ? ' cached' : '') + '">' + esc(String(s.name || '').replace(/^\[[^\]]*\]\s*/, '').replace(/torrentio\s*/i, '').trim() || 'Stream') +
       (cached ? '' : '\nnot ready') + '</div><div class="d">' + esc(s.title || s.description || '') + '</div></div>');
     v.onclick = () => start(type, id, s.n, info, s); if (cached) v.appendChild(versionDl(type, id, info, s));
