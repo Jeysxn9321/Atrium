@@ -878,7 +878,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       : j.result && Array.isArray(j.result.addons) ? j.result.addons
       : Array.isArray(j.addons) ? j.addons : [];
     dramaAddons = src.map(a => {
-      if (!a || !a.manifest || !Array.isArray(a.manifest.catalogs)) return null;
+      if (!a || !a.manifest) return null;
+      // Keep streaming-only add-ons for playback, even when they publish no catalog.
+      const catalogs = Array.isArray(a.manifest.catalogs) ? a.manifest.catalogs : [];
+      const resources = Array.isArray(a.manifest.resources) ? a.manifest.resources : [];
+      if (!catalogs.length && !resources.some(r => r === 'stream' || (r && r.name === 'stream'))) return null;
       const url = String(a.transportUrl || '');
       if (!/^https:\/\//i.test(url) || !/\/manifest\.json(?:\?.*)?$/i.test(url)) return null;
       return { manifest: a.manifest, base: url.replace(/\/manifest\.json(?:\?.*)?$/i, '') };
@@ -897,7 +901,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       const mf = add.manifest;
       const sourceLabel = String(mf.name || '') + ' ' + String(mf.id || '');
       const sourceOnly = matches(sourceLabel) && (all || !dramaMatch(sourceLabel, other));
-      mf.catalogs.forEach(cat => {
+      (mf.catalogs || []).forEach(cat => {
         if (!cat || !cat.id || !/^(series|movie)$/.test(cat.type || '')) return;
         const label = String(cat.name || '') + ' ' + String(cat.id);
         if (!all && dramaMatch(label, other) && !dramaMatch(label, country)) return;
@@ -1010,8 +1014,50 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return { streams: streams, error: streams.length ? '' : 'No direct playable stream was returned by the installed add-ons' };
   }
 
-  async function getStreams(type, id) {
-    if (!/^(movie|series|anime)$/.test(type) || !/^[A-Za-z0-9:_\-]+$/.test(id)) return { streams: [], error: 'bad id' };
+  // Opt-in source merging for Asian Dramas and Animes only.
+  // Movies and TV Shows continue to use the original Torrentio resolver.
+  async function getScopedSources(type, id) {
+    let primary;
+    try { primary = await getStreams(type, id); } catch (e) { primary = { streams: [], error: 'Source provider unavailable' }; }
+    const key = type + '/' + id;
+    const oldUrls = streamUrls.get(key) || [];
+    const urls = [], streams = [], seen = new Set();
+    const add = (url, meta) => {
+      if (typeof url !== 'string' || !/^https:\/\/[A-Za-z0-9.-]+(?::\d{2,5})?\//.test(url) || /["\s]/.test(url) || seen.has(url)) return;
+      seen.add(url);
+      const n = urls.push(url) - 1;
+      streams.push({ n, name: String(meta.name || ''), title: String(meta.title || ''), description: String(meta.description || ''), direct: !!meta.direct });
+    };
+    (primary.streams || []).forEach(x => {
+      if (!x || !Number.isInteger(x.n) || x.n < 0 || x.n >= oldUrls.length) return;
+      add(oldUrls[x.n], x);
+    });
+    // The same collection includes addons that expose ONLY 'stream', no catalog.
+    // Query each compatible provider independently so no single provider can suppress another.
+    let addons = [];
+    try { addons = await installedDramaAddons(); } catch (e) {}
+    const matches = addons.filter(a => (a.manifest.resources || []).some(r => {
+      if (r !== 'stream' && (!r || r.name !== 'stream')) return false;
+      if (r && typeof r === 'object' && Array.isArray(r.types) && !r.types.includes(type)) return false;
+      const prefixes = r && typeof r === 'object' && Array.isArray(r.idPrefixes) ? r.idPrefixes
+        : Array.isArray(a.manifest.idPrefixes) ? a.manifest.idPrefixes : [];
+      return !prefixes.length || prefixes.some(p => id.startsWith(String(p)));
+    })).slice(0, 24);
+    const results = await Promise.all(matches.map(async a => {
+      try {
+        const j = await dramaFetchJSON(a.base + '/stream/' + type + '/' + encodeURIComponent(id) + '.json');
+        return (Array.isArray(j.streams) ? j.streams : []).slice(0, 50).map(x => ({
+          url: x && x.url, name: x && (x.name || a.manifest.name), title: x && x.title, direct: true
+        }));
+      } catch (e) { return []; }
+    }));
+    results.forEach(group => group.forEach(m => { if (streams.length < 80) add(m.url, m); }));
+    streamUrls.set(key, urls);
+    return { streams, error: streams.length ? '' : (primary.error || 'No direct playable source from installed add-ons') };
+  }
+  async function getStreams(type, id, section) {
+    if (!/^(movie|series|anime)$/.test(type) || !/^[A-Za-z0-9:_\\-]+$/.test(id)) return { streams: [], error: 'bad id' };
+    if ((section === 'asian' && type === 'series') || (section === 'anime' && type === 'anime')) return getScopedSources(type, id);
     const drama = dramaMetaOrigins.has(type + '/' + rootId(id));
     if (drama && !/^tt\d+/.test(id)) return getDramaStreams(type, id);
     let base;
@@ -1567,7 +1613,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       case '/api/dramas': return getDramaCatalogs(q.get('country') || '', q.get('search') || '');
       case '/api/dramas/meta': return getDramaMeta(q.get('type') || '', q.get('id') || '');
       case '/api/dramas/trending': return tmdbAsianTrending(q.get('country') || 'all');
-      case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '');
+      case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '', q.get('section') || '');
       case '/api/play': return playStream(q, opt.body);
       case '/api/download': return downloadStream(opt.body);
       case '/api/tmdb': return tmdbInfo(q.get('type') || '', q.get('id') || '', q.get('full'));
@@ -3087,9 +3133,11 @@ function quality(s) {
 }
 const streamsCache = new Map();
 function getStreams(type, id) {
-  const key = type + '/' + id;
+  // Only the selected Asian Dramas tab and anime-type titles use combined add-on sources.
+  const section = type === 'anime' ? 'anime' : (tab === 'dramas' && type === 'series' ? 'asian' : '');
+  const key = type + '/' + id + (section ? '#' + section : '');
   if (!streamsCache.has(key)) {
-    streamsCache.set(key, local('/api/streams?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id)).then(j => {
+    streamsCache.set(key, local('/api/streams?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id) + (section ? '&section=' + section : '')).then(j => {
       const list = (j.streams || []).filter(s => typeof s.n === 'number');
       list.sort((a, b) => score(b) - score(a));
       list.error = j.error;
@@ -4106,7 +4154,7 @@ const contMark = () => JSON.stringify(contCache.map(c => [c.videoId, Math.round(
 async function boot() {
   window.atriumUp = true;
   local('/api/device').then(j => { if (j && +j.max) { deviceMax = +j.max; streamsCache.clear(); } }).catch(() => {});
-  $$('#top [data-tab]').forEach(b => { b.onclick = () => { tab = b.dataset.tab; person = null; $('#q').value = ''; render(); }; });
+  $$('#top [data-tab]').forEach(b => { b.onclick = () => { streamsCache.clear(); tab = b.dataset.tab; person = null; $('#q').value = ''; render(); }; });
   $('#brand').onclick = () => { tab = 'home'; person = null; $('#q').value = ''; render(); };
   $('#q').oninput = ev => { clearTimeout(searchTimer); person = null; const t = ev.target.value.trim(); searchTimer = setTimeout(() => doSearch(t), 350); };
   $('#veil').onclick = ev => { if (ev.target.id === 'veil') closeDetail(); };
