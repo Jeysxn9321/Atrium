@@ -666,9 +666,9 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   <div id="brand">Atrium</div>
   <nav id="tabs">
     <button data-tab="home" class="on">Home</button>
-    <button data-tab="dramas">Asian Dramas</button>
     <button data-tab="series">TV Shows</button>
     <button data-tab="movie">Movies</button>
+    <button data-tab="dramas">Asian Dramas</button>
     <button data-tab="anime">Animes</button>
     <button data-tab="sr">Somnia</button>
     <button data-tab="list">My list</button>
@@ -762,7 +762,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-11-17 · unified Asian Dramas';
+  const BUILD = '2026-11-17 · Asian Dramas trending and trailers';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1473,6 +1473,31 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     return Object.assign({ id: imdb, type: tv ? 'series' : 'movie', name: String((tv ? r.name : r.title) || ''), poster: img('w342', r.poster_path),
       background: img('w780', r.backdrop_path), description: String(r.overview || ''), releaseInfo: year(tv ? r.first_air_date : r.release_date) }, extra || {});
   };
+  // Real weekly TMDB TV chart, preserving the provider's worldwide rank while filtering by origin.
+  // Unlike an add-on catalog, this source genuinely supplies a trending order.
+  async function tmdbAsianTrending(country) {
+    if (!['all', 'kr', 'jp'].includes(country)) return { metas: [], error: 'bad country' };
+    if (!tmdbKey()) return { metas: [], error: 'no key' };
+    const slot = 'asian-trending/week/' + country, old = cached(slot, 45);
+    if (old) return old;
+    try {
+      const possible = [], seen = new Set();
+      for (let page = 1; page <= 8 && possible.length < 16; page++) {
+        const j = await tm('trending/tv/week', 'language=en-CA&page=' + page);
+        (j.results || []).forEach(r => {
+          if (!r || !r.id || seen.has(r.id)) return;
+          const origins = r.origin_country || [];
+          const kr = origins.includes('KR'), jp = origins.includes('JP');
+          if (country === 'kr' ? !kr : country === 'jp' ? !jp : !(kr || jp)) return;
+          seen.add(r.id);
+          possible.push(Object.assign({}, r, { media_type: 'tv' }));
+        });
+      }
+      const metas = (await Promise.all(possible.slice(0, 16).map(r => asMeta(r).catch(() => null)))).filter(Boolean).slice(0, 10);
+      saveIds();
+      return keep(slot, { metas: metas, source: 'TMDB weekly TV trending' });
+    } catch (e) { return { metas: [], error: 'TMDB unavailable' }; }
+  }
   // Search at TMDB, which also knows titles the catalogue does not (Quebec shows, for one).
   async function tmdbSearch(text) {
     text = String(text || '').trim();
@@ -1541,6 +1566,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       case '/api/resume': return {};
       case '/api/dramas': return getDramaCatalogs(q.get('country') || '', q.get('search') || '');
       case '/api/dramas/meta': return getDramaMeta(q.get('type') || '', q.get('id') || '');
+      case '/api/dramas/trending': return tmdbAsianTrending(q.get('country') || 'all');
       case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '');
       case '/api/play': return playStream(q, opt.body);
       case '/api/download': return downloadStream(opt.body);
@@ -2465,7 +2491,7 @@ let contCache = [], renderSeq = 0;
 // A rail always keeps its name, so users can tell what their Stremio account returned.
 function dramaShelf(country, query, seq) {
   const title = country === 'all' ? 'Asian Dramas' : country === 'kr' ? 'Korean Dramas' : 'Japanese Dramas';
-  const row = makeRow(title, 'Your Stremio add-ons');
+  const row = makeRow(country === 'all' && tab === 'dramas' ? 'Popular Asian dramas' : title);
   const strip = $('.strip', row);
   skeletons(strip, 10);
   row._load = async () => {
@@ -2496,13 +2522,40 @@ function dramaShelf(country, query, seq) {
   lazy.observe(row);
   return row;
 }
+// Share TMDB's live weekly trend across the ranked shelf and the cinematic trailer banner.
+const asianTrendingCache = new Map();
+function asianTrending(country) {
+  if (!asianTrendingCache.has(country)) {
+    asianTrendingCache.set(country, local('/api/dramas/trending?country=' + country)
+      .then(j => j && Array.isArray(j.metas) && !j.error ? j.metas.filter(m => m && m.id && m.name) : [])
+      .catch(() => []));
+  }
+  return asianTrendingCache.get(country);
+}
+function asianTrendingRow(country, seq) {
+  const row = makeRow('Top 10 trending Asian dramas');
+  const strip = $('.strip', row);
+  skeletons(strip, 10);
+  row._load = async () => {
+    const metas = await asianTrending(country);
+    if (!row.isConnected || seq !== renderSeq) return;
+    strip.innerHTML = '';
+    metas.slice(0, 10).forEach((m, i) => {
+      const rank = el('<div class="rank"><span class="n">' + (i + 1) + '</span></div>');
+      rank.appendChild(posterCard(m));
+      strip.appendChild(rank);
+    });
+    if (!strip.children.length) row.remove();
+  };
+  lazy.observe(row);
+  return row;
+}
 let asianFilter = 'all';
 function renderDramaHub(seq, query) {
   const rows = $('#rows');
   heroOff();
-  rows.classList.add('flat');
+  rows.classList.remove('flat');
   rows.innerHTML = '';
-  rows.appendChild(el('<div class="row"><h2>Asian Dramas<small>Korean and Japanese series, synced with your Stremio add-ons</small></h2></div>'));
   const bar = el('<div class="catbar"><div class="chips"></div></div>');
   [['all', 'All'], ['kr', 'Korean'], ['jp', 'Japanese']].forEach(([value, label]) => {
     const chip = el('<button class="chip' + (asianFilter === value ? ' on' : '') + '">' + label + '</button>');
@@ -2514,12 +2567,21 @@ function renderDramaHub(seq, query) {
     $('.chips', bar).appendChild(chip);
   });
   rows.appendChild(bar);
-  if (asianFilter === 'all') {
-    rows.appendChild(dramaShelf('all', query, seq));
-    rows.appendChild(dramaShelf('kr', query, seq));
-    rows.appendChild(dramaShelf('jp', query, seq));
-  } else {
-    rows.appendChild(dramaShelf(asianFilter, query, seq));
+  if (!query) {
+    rows.appendChild(asianTrendingRow(asianFilter, seq));
+    asianTrending(asianFilter).then(async list => {
+      if (seq !== renderSeq || tab !== 'dramas') return;
+      const featured = list.filter(m => m.background && m.description).slice(0, 5);
+      if (featured.length) await within(tmdbTrailer(featured[0], featured[0].type, featured[0].id), 4500);
+      if (seq !== renderSeq || tab !== 'dramas') return;
+      heroSet(featured.map(m => ({ m: m })));
+      if (!featured.length) rows.classList.add('flat');
+    });
+  }
+  rows.appendChild(dramaShelf(asianFilter, query, seq));
+  if (asianFilter === 'all' && !query) {
+    rows.appendChild(dramaShelf('kr', '', seq));
+    rows.appendChild(dramaShelf('jp', '', seq));
   }
 }
 async function render() {
