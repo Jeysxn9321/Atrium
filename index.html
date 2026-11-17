@@ -847,6 +847,118 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     torrentio = pick;
     return pick;
   }
+
+  // ---------- K-drama / J-drama catalogues from the signed-in Stremio account ----------
+  // Add-on URLs can contain private configuration tokens. They stay inside this closure:
+  // neither the rendered page nor the GitHub source ever receives the configured URLs.
+  let dramaAddons = null, dramaAddonsAt = 0;
+  const dramaCatalogCache = new Map(), dramaMetaOrigins = new Map();
+  const dramaMatch = (value, country) => {
+    const s = String(value || '');
+    return country === 'kr'
+      ? /(?:^|[^a-z])(?:k[\s-]?dramas?|korean|korea|south[\s-]?korea|hallyu)(?=[^a-z]|$)/i.test(s)
+      : /(?:^|[^a-z])(?:j[\s-]?dramas?|j[\s-]?doramas?|japanese|japan)(?=[^a-z]|$)/i.test(s);
+  };
+  async function installedDramaAddons() {
+    if (!stremioKey()) return [];
+    if (dramaAddons && Date.now() - dramaAddonsAt < 300000) return dramaAddons;
+    const j = await stremio('addonCollectionGet', { authKey: stremioKey(), update: true });
+    if (j && j.error) throw new Error('Stremio could not load your add-ons');
+    const src = Array.isArray(j.result) ? j.result
+      : j.result && Array.isArray(j.result.addons) ? j.result.addons
+      : Array.isArray(j.addons) ? j.addons : [];
+    dramaAddons = src.map(a => {
+      if (!a || !a.manifest || !Array.isArray(a.manifest.catalogs)) return null;
+      const url = String(a.transportUrl || '');
+      if (!/^https:\/\//i.test(url) || !/\/manifest\.json(?:\?.*)?$/i.test(url)) return null;
+      return { manifest: a.manifest, base: url.replace(/\/manifest\.json(?:\?.*)?$/i, '') };
+    }).filter(Boolean);
+    dramaAddonsAt = Date.now();
+    dramaCatalogCache.clear();
+    dramaMetaOrigins.clear();
+    return dramaAddons;
+  }
+  function dramaCandidates(addons, country) {
+    const other = country === 'kr' ? 'jp' : 'kr', picks = [], seen = new Set();
+    addons.forEach(add => {
+      const mf = add.manifest;
+      const sourceLabel = String(mf.name || '') + ' ' + String(mf.id || '');
+      const sourceOnly = dramaMatch(sourceLabel, country) && !dramaMatch(sourceLabel, other);
+      mf.catalogs.forEach(cat => {
+        if (!cat || !cat.id || !/^(series|movie)$/.test(cat.type || '')) return;
+        const label = String(cat.name || '') + ' ' + String(cat.id);
+        if (dramaMatch(label, other) && !dramaMatch(label, country)) return;
+        const extras = Array.isArray(cat.extra) ? cat.extra : [];
+        if (extras.some(e => e && e.isRequired && !['genre', 'skip'].includes(e.name))) return;
+        const genre = extras.find(e => e && e.name === 'genre');
+        const options = genre && Array.isArray(genre.options) ? genre.options : [];
+        const selected = options.find(o => dramaMatch(o, country)) || '';
+        const explicitlyNamed = dramaMatch(label, country);
+        if (!selected && !explicitlyNamed && !sourceOnly) return;
+        if (genre && genre.isRequired && !selected) {
+          const all = options.find(o => /^(all|all genres)$/i.test(o));
+          if (!all) return;
+        }
+        const params = [];
+        if (selected) params.push('genre=' + encodeURIComponent(selected));
+        else if (genre && genre.isRequired) params.push('genre=' + encodeURIComponent(options.find(o => /^(all|all genres)$/i.test(o))));
+        if (extras.some(e => e && e.name === 'skip' && e.isRequired)) params.push('skip=0');
+        const key = add.base + '|' + cat.type + '|' + cat.id + '|' + params.join('&');
+        if (seen.has(key)) return;
+        seen.add(key);
+        picks.push({ add: add, cat: cat, params: params, searchable: extras.some(e => e && e.name === 'search') });
+      });
+    });
+    return picks.slice(0, 16);
+  }
+  async function dramaFetchJSON(url) {
+    const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 12000);
+    try {
+      const r = await fetch(url, { signal: ac.signal });
+      if (!r.ok) throw new Error('catalog HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(timer); }
+  }
+  async function getDramaCatalogs(country, search) {
+    if (country !== 'kr' && country !== 'jp') return { rows: [], error: 'bad country' };
+    if (!stremioKey()) return { rows: [], error: 'not signed in' };
+    const query = String(search || '').trim().slice(0, 100);
+    const cacheKey = country + '|' + query.toLowerCase();
+    const old = dramaCatalogCache.get(cacheKey);
+    if (old && Date.now() - old.at < 120000) return old.value;
+    const addons = await installedDramaAddons(), picks = dramaCandidates(addons, country);
+    const loaded = await Promise.all(picks.map(async p => {
+      try {
+        const params = p.params.slice();
+        if (query && p.searchable) params.push('search=' + encodeURIComponent(query));
+        const url = p.add.base + '/catalog/' + encodeURIComponent(p.cat.type) + '/' + encodeURIComponent(p.cat.id)
+          + (params.length ? '/' + params.join('&') : '') + '.json';
+        const j = await dramaFetchJSON(url);
+        let metas = Array.isArray(j.metas) ? j.metas.filter(m => m && m.id && m.name) : [];
+        if (query && !p.searchable) metas = metas.filter(m => String(m.name).toLowerCase().includes(query.toLowerCase()));
+        metas = metas.slice(0, 80).map(m => {
+          const type = /^(series|movie)$/.test(m.type || '') ? m.type : p.cat.type;
+          dramaMetaOrigins.set(type + '/' + m.id, { add: p.add, type: type, meta: m });
+          return Object.assign({}, m, { type: type });
+        });
+        return metas.length ? { title: String(p.cat.name || p.add.manifest.name || 'Dramas'), source: String(p.add.manifest.name || 'Stremio add-on'), metas: metas } : null;
+      } catch (e) { return { failed: true }; }
+    }));
+    const result = { rows: loaded.filter(r => r && r.metas), matches: picks.length,
+      failures: loaded.filter(r => r && r.failed).length };
+    dramaCatalogCache.set(cacheKey, { at: Date.now(), value: result });
+    return result;
+  }
+  async function getDramaMeta(type, id) {
+    const origin = dramaMetaOrigins.get(type + '/' + id);
+    if (!origin) return { meta: null };
+    try {
+      const j = await dramaFetchJSON(origin.add.base + '/meta/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '.json');
+      if (j && j.meta && j.meta.name) return { meta: Object.assign({}, origin.meta, j.meta, { type: type, id: id }) };
+    } catch (e) {}
+    return { meta: Object.assign({ videos: [] }, origin.meta, { type: type, id: id }) };
+  }
+
   // The page gets the list without the addresses (they contain the TorBox key) and plays a stream
   // by its place in the list, as on the PC.
   const streamUrls = new Map();
@@ -1370,6 +1482,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       case '/api/library': return getLibrary();
       case '/api/library/put': { let item = null; try { item = JSON.parse(opt.body || 'null'); } catch (e) {} return putLibrary(item); }
       case '/api/resume': return {};
+      case '/api/dramas': return getDramaCatalogs(q.get('country') || '', q.get('search') || '');
+      case '/api/dramas/meta': return getDramaMeta(q.get('type') || '', q.get('id') || '');
       case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '');
       case '/api/play': return playStream(q, opt.body);
       case '/api/download': return downloadStream(opt.body);
