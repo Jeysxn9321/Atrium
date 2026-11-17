@@ -649,6 +649,14 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
 .dl .acts{grid-column:1 / -1;align-items:center}
 .dl .acts .btn{flex:1;justify-content:center}
 @media (min-width: 700px){ .dl{grid-template-columns:16rem 1fr auto} .dl .acts{grid-column:auto} .dl .acts .btn{flex:none} }
+/* Extra drama tabs: scroll horizontally rather than compressing the phone or TV UI. */
+#tabs{min-width:0;flex:0 1 auto;overflow-x:auto;scrollbar-width:none;overscroll-behavior-x:contain}
+#tabs::-webkit-scrollbar{display:none}
+#tabs button{flex-shrink:0;white-space:nowrap}
+@media (max-width:700px){
+  #tabs{justify-content:flex-start;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  #tabs button{flex:0 0 auto;min-width:7.5rem;padding-left:1rem;padding-right:1rem;scroll-snap-align:center}
+}
 </style>
 </head>
 <body>
@@ -660,6 +668,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     <button data-tab="series">TV Shows</button>
     <button data-tab="movie">Movies</button>
     <button data-tab="anime">Animes</button>
+    <button data-tab="kdrama">K-dramas</button>
+    <button data-tab="jdrama">J-dramas</button>
     <button data-tab="sr">Somnia</button>
     <button data-tab="list">My list</button>
   </nav><button id="catBtn" hidden><span>Categories</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -752,7 +762,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-10-26 17:36 UTC';
+  const BUILD = '2026-11-16 · K/J drama catalogs';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1590,7 +1600,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     box.innerHTML = '<button class="sx" id="suClose" aria-label="Close">&times;</button><div class="panel">' +
       '<h2>' + (first ? 'Welcome to Atrium' : 'Settings') + '</h2>' +
       (notice ? '<p class="hint">' + esc(notice) + '</p>' : '') +
-      (first ? '<p>Sign in once on this device: it stays signed in. Your library, My list and your TorBox add-on come from your Stremio account.</p>' : '') +
+      (first ? '<p>Sign in once on this device: it stays signed in. Your library, My list, and the K-drama and J-drama catalogues of your installed add-ons come from your Stremio account.</p>' : '') +
       (first && isIOS && !standalone ? '<p class="hint">On iPhone, first tap Share, then <b>Add to Home Screen</b>, then open Atrium from the Home Screen and sign in there. Safari and the Home Screen app keep their sign-ins apart, so signing in inside the Home Screen app is the one that lasts.</p>' : '') +
       (isTV && first && !signed ? '<h3>Sign in from your phone</h3><p>On your phone, open Atrium, tap the gear, find <b>Sign in a TV</b> and type this code:</p><div class="tvcode" id="tvCode"></div><div class="msg" id="tvMsg">Waiting for your phone…</div>' : '') +
       '<h3>Stremio account' + (signed ? ' <span class="okmark">signed in</span>' : '') + '</h3>' +
@@ -1878,11 +1888,17 @@ function getMeta(type, id) {
   if (!metaCache.has(key)) {
     const base = /^kitsu/.test(id) ? KITSU : CM;
     let p = getJSON(base + '/meta/' + type + '/' + encodeURIComponent(id) + '.json').then(j => j.meta);
-    // a title the catalogue does not know is described by TMDB instead
-    if (base === CM && isImdb(id)) p = p.catch(() => null).then(m => (m && m.name ? m : tmdbInfo(type, id, true).then(i => {
+    // Installed drama add-ons may use IDs that Cinemeta has never indexed.
+    // Ask the account's originating add-on before falling back to TMDB.
+    if (base === CM) p = p.catch(() => null).then(async m => {
+      if (m && m.name) return m;
+      const own = await local('/api/dramas/meta?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id)).catch(() => null);
+      if (own && own.meta && own.meta.name) return own.meta;
+      if (!isImdb(id)) throw new Error('unknown title');
+      const i = await tmdbInfo(type, id, true);
       if (!i || !i.meta || !i.meta.name) throw new Error('unknown title');
       return Object.assign(i.meta, { id: id, type: type, yt: ytKeys(i), viaTmdb: true });
-    })));
+    });
     metaCache.set(key, p.catch(e => { metaCache.delete(key); throw e; }));
   }
   return metaCache.get(key);
@@ -2397,6 +2413,46 @@ function heroDraw() {
 
 // ---------- pages ----------
 let contCache = [], renderSeq = 0;
+
+// Country-specific shelves are read from this device's signed-in Stremio add-ons.
+// Their configured private URLs are never inserted into the page or saved in HTML.
+async function renderDrama(country, seq, query) {
+  const rows = $('#rows'), isKorean = country === 'kr';
+  heroOff();
+  rows.classList.add('flat');
+  rows.innerHTML = '';
+  const name = isKorean ? 'K-dramas' : 'J-dramas';
+  rows.appendChild(el('<div class="row"><h2>' + name + '<small>From your installed Stremio add-ons</small></h2></div>'));
+  const status = el('<div class="empty">Loading ' + name + ' from Stremio…</div>');
+  rows.appendChild(status);
+  let j;
+  try {
+    j = await local('/api/dramas?country=' + country + (query ? '&search=' + encodeURIComponent(query) : ''));
+  } catch (e) {
+    j = { rows: [], error: 'The Stremio add-ons could not be reached.' };
+  }
+  if (seq !== renderSeq || !rows.contains(status)) return;
+  status.remove();
+  const shelves = (j.rows || []).filter(r => r && Array.isArray(r.metas) && r.metas.length);
+  shelves.forEach(r => {
+    const row = makeRow(r.title, r.source);
+    const seen = new Set();
+    r.metas.forEach(m => {
+      if (!m || !m.name || !m.id || seen.has(m.type + '/' + m.id)) return;
+      seen.add(m.type + '/' + m.id);
+      $('.strip', row).appendChild(posterCard(m));
+    });
+    if ($('.strip', row).children.length) rows.appendChild(row);
+  });
+  if (shelves.length) return;
+  let msg;
+  if (j.error === 'not signed in') msg = 'Sign in to your Stremio account in Settings to see your installed drama add-ons.';
+  else if (j.error) msg = 'Could not load the Stremio drama catalogues. Check your connection and try again.';
+  else if (!j.matches) msg = 'No ' + (isKorean ? 'K-drama' : 'J-drama') + ' catalogue was found in your installed Stremio add-ons. Add-ons that only provide streams do not provide a browsable catalogue.';
+  else if (j.failures) msg = 'The matching add-ons could not return their catalogues. Some add-ons do not allow access from web browsers.';
+  else msg = query ? 'No ' + name + ' matched “' + query + '”.' : 'No titles are currently available in the matching add-on catalogues.';
+  rows.appendChild(el('<div class="empty">' + esc(msg) + '</div>'));
+}
 async function render() {
   const seq = ++renderSeq;
   const rows = $('#rows');
@@ -2405,11 +2461,16 @@ async function render() {
   window.scrollTo(0, 0);
   peekHide();
   $$('#top [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  $('#q').placeholder = tab === 'anime' ? 'Search animes' : 'Search movies and TV shows';
+  $('#q').placeholder = tab === 'anime' ? 'Search animes' : tab === 'kdrama' ? 'Search K-dramas' : tab === 'jdrama' ? 'Search J-dramas' : 'Search movies and TV shows';
 
   if (person) { $('#catBtn').hidden = true; $('#catMenu').classList.remove('on'); renderPerson(); return; }
   if (catView()) return;
   if (tab === 'sr') { renderSR(); return; } if (tab === 'dl') { renderDownloads(); return; }
+
+  if (tab === 'kdrama' || tab === 'jdrama') {
+    await renderDrama(tab === 'kdrama' ? 'kr' : 'jp', seq, '');
+    return;
+  }
 
   if (tab === 'anime') {
     const mine = library.filter(x => /^kitsu/.test(x._id) && !x.removed && !x.temp).sort((a, b) => String(b._mtime || '').localeCompare(String(a._mtime || '')));
@@ -2505,6 +2566,11 @@ function doSearch(text) {
   if (!text) { render(); return; }
   const seq = ++searchSeq;
   renderSeq++;
+  if (tab === 'kdrama' || tab === 'jdrama') {
+    peekHide();
+    renderDrama(tab === 'kdrama' ? 'kr' : 'jp', renderSeq, text);
+    return;
+  }
   heroOff();
   peekHide();
   rows.classList.add('flat');
