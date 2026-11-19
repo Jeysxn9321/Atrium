@@ -46,7 +46,6 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private let playbackRates: [Float] = [1, 1.25, 1.5, 2]
     private var playbackRateIndex = 0
     private var brightnessAtPanStart: CGFloat = 0
-    private var lastSeekHint = Date.distantPast
 
     init(url: URL, title: String, start: Double, audioLanguage: String) {
         self.url = url
@@ -122,7 +121,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(videoPan(_:)))
         pan.maximumNumberOfTouches = 1
         pan.cancelsTouchesInView = false
-        videoView.addGestureRecognizer(pan)
+        view.addGestureRecognizer(pan)
         videoView.isUserInteractionEnabled = true
 
         player.delegate = self
