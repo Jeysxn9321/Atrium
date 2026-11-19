@@ -2802,7 +2802,10 @@ async function render() {
 
   if (tab === 'home') {
     if (contCache.length) rows.appendChild(contRow());
-    rows.appendChild(dramaShelf('all', '', seq));
+    // Mobile (including the unfolded iPhone Duo): Asian Dramas belongs at
+    // the very end of Home, after all other shelves. Desktop retains its order.
+    const mobileHome = window.matchMedia('(pointer: coarse)').matches;
+    if (!mobileHome) rows.appendChild(dramaShelf('all', '', seq));
     rows.appendChild(topRow('Top 10 trending', ['series', 'movie']));
     const mine = library.filter(x => !x.removed && !x.temp).sort((a, b) => String(b._mtime || '').localeCompare(String(a._mtime || ''))).slice(0, 40);
     if (mine.length) {
@@ -2816,6 +2819,7 @@ async function render() {
     rows.appendChild(catalogRow('Top rated TV shows', 'series', 'imdbRating'));
     rows.appendChild(catalogRow('Top rated movies', 'movie', 'imdbRating'));
     GENRES.slice(0, 6).forEach((g, i) => rows.appendChild(catalogRow(g + (i % 2 ? ' movies' : ' TV shows'), i % 2 ? 'movie' : 'series', 'top', g)));
+    if (mobileHome) rows.appendChild(dramaShelf('all', '', seq));
     rows.appendChild(el('<div class="credit">Some trailers and titles come from TMDB. Atrium uses the TMDB API but is not endorsed or certified by TMDB.</div>'));
   } else {
     const word = tab === 'movie' ? 'movies' : 'TV shows';
