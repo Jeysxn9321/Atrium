@@ -38,6 +38,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private var closing = false
     private var lastSent = Date.distantPast
     private var fill = true
+    private var lastCropGeometry: String?
     private var lastPos = 0.0
     private var startedAt = Date.distantPast
 
@@ -52,25 +53,32 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    // iPhone Duo inner displays do not obey a fixed orientation. Adapt to the current
+    // window instead of locking it to landscape, and keep portrait available for folding.
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        requestLandscape()
-        applyFill()
+        requestOuterDisplayLandscapeIfNeeded()
+        applyFill(force: true)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // Recalculate after any fold, window resize, Split View or rotation.
+        titleLabel.isHidden = view.bounds.width < 540
         applyFill()
     }
 
-    private func requestLandscape() {
+    private func requestOuterDisplayLandscapeIfNeeded() {
+        // For the compact outer display, landscape is more comfortable for video.
+        // The inner display should resize naturally, without a forced orientation.
+        guard traitCollection.horizontalSizeClass == .compact,
+              view.bounds.height > view.bounds.width else { return }
         if #available(iOS 16.0, *) {
-            setNeedsUpdateOfSupportedInterfaceOrientations()
             view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
-                NSLog("Atrium landscape request: %@", error.localizedDescription)
+                NSLog("Atrium outer display orientation: %@", error.localizedDescription)
             }
         } else {
             UIViewController.attemptRotationToDeviceOrientation()
@@ -112,7 +120,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         lastPos = max(0, startAt)
         player.media = media
         player.play()
-        applyFill()
+        applyFill(force: true)
         UIApplication.shared.isIdleTimerDisabled = true
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
@@ -260,28 +268,38 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     @objc private func forwardTapped() { player.jumpForward(10); showControls() }
     @objc private func fitTapped() {
         fill.toggle()
-        // fill the screen (the edges are cropped) or fit the whole picture
-        if fill {
-            applyFill()
-        } else {
-            player.videoCropGeometry = nil
-            player.scaleFactor = 0
-        }
+        applyFill(force: true)
         fitButton.setImage(symbol(fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"), for: .normal)
+        fitButton.accessibilityValue = fill ? "Fill screen" : "Fit full image"
         showControls()
     }
-    private func applyFill() {
-        let size = view.bounds.size
-        guard fill, size.width > 0, size.height > 0 else { return }
-        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+
+    // VLC renders into the whole view. In Fill mode the video is cropped, never stretched.
+    // Use the current drawable size, not UIScreen.main (ambiguous on iPhone Duo).
+    private func applyFill(force: Bool = false) {
+        let size = videoView.bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+        if !fill {
+            if force || lastCropGeometry != nil {
+                player.videoCropGeometry = nil
+                player.scaleFactor = 0
+                lastCropGeometry = nil
+            }
+            return
+        }
+        let scale = traitCollection.displayScale
         let width = Int((size.width * scale).rounded())
         let height = Int((size.height * scale).rounded())
         guard width > 0, height > 0 else { return }
-        "\(width):\(height)".withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
+        let crop = "\(width):\(height)"
+        guard force || crop != lastCropGeometry else { return }
+        crop.withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
+        lastCropGeometry = crop
     }
+
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.applyFill() }
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.applyFill(force: true) }
     }
     @objc private func scrubStarted() { scrubbing = true; hideWork?.cancel() }
     @objc private func scrubMoved() {
@@ -394,7 +412,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
                 if !self.started {
                     self.started = true
                     self.startedAt = Date()
-                    self.applyFill()
+                    self.applyFill(force: true)
                     self.lastSent = Date()   // the first report comes 20 s in, after the resume point has landed
                     self.player.currentVideoSubTitleIndex = -1
                 }
