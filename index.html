@@ -763,6 +763,13 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
 /* The web fallback player also needs a genuinely tappable aspect-ratio button. */
 #vp.ui .vfit { pointer-events: auto; }
 
+/* Keep the Home browsing rail and progress cards readable in all Duo sizes. */
+#contRow .strip {scroll-padding-inline:var(--pad)}
+#contRow .card {scroll-snap-align:start}
+@media (pointer:coarse) {
+  #contRow .strip {overscroll-behavior-inline:contain}
+  #contRow .card {touch-action:pan-x}
+}
 </style>
 </head>
 <body>
@@ -2802,10 +2809,9 @@ async function render() {
 
   if (tab === 'home') {
     if (contCache.length) rows.appendChild(contRow());
-    // Mobile (including the unfolded iPhone Duo): Asian Dramas belongs at
-    // the very end of Home, after all other shelves. Desktop retains its order.
-    const mobileHome = window.matchMedia('(pointer: coarse)').matches;
-    if (!mobileHome) rows.appendChild(dramaShelf('all', '', seq));
+    // Asian Dramas is intentionally the last Home shelf on every viewport.
+    // Do not rely on pointer:coarse: WKWebView can report a fine pointer on Duo.
+    // The separate Asian Dramas navigation destination remains unchanged.
     rows.appendChild(topRow('Top 10 trending', ['series', 'movie']));
     const mine = library.filter(x => !x.removed && !x.temp).sort((a, b) => String(b._mtime || '').localeCompare(String(a._mtime || ''))).slice(0, 40);
     if (mine.length) {
@@ -2819,7 +2825,7 @@ async function render() {
     rows.appendChild(catalogRow('Top rated TV shows', 'series', 'imdbRating'));
     rows.appendChild(catalogRow('Top rated movies', 'movie', 'imdbRating'));
     GENRES.slice(0, 6).forEach((g, i) => rows.appendChild(catalogRow(g + (i % 2 ? ' movies' : ' TV shows'), i % 2 ? 'movie' : 'series', 'top', g)));
-    if (mobileHome) rows.appendChild(dramaShelf('all', '', seq));
+    rows.appendChild(dramaShelf('all', '', seq));
     rows.appendChild(el('<div class="credit">Some trailers and titles come from TMDB. Atrium uses the TMDB API but is not endorsed or certified by TMDB.</div>'));
   } else {
     const word = tab === 'movie' ? 'movies' : 'TV shows';
