@@ -282,6 +282,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private func configureTabletopShortcut() {
         // A persistent entry point, not part of the auto-hiding controls overlay.
         // Without hinge-angle access, the user must be able to reach this button.
+        tableModeButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableModeButton)
         tableModeButton.backgroundColor = UIColor.black.withAlphaComponent(0.68)
         tableModeButton.layer.cornerRadius = 22
