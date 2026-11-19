@@ -620,6 +620,59 @@ html.tv .credit{padding-bottom:5vh}
   #intro b{font-size:27vw}
 }
 
+/* ---------- iPhone app: adaptive layout and native-feeling touch targets ---------- */
+@media (pointer:coarse) and (max-width:700px){
+  #top{padding-left:max(1.2rem,env(safe-area-inset-left));padding-right:max(1.2rem,env(safe-area-inset-right))}
+  #top .tb,#catBtn,#close{min-width:44px;min-height:44px}
+  #tabs button{min-height:48px;touch-action:manipulation}
+  .chip,.ep,.v,.card,.btn{touch-action:manipulation}
+  #sheet .btns .btn,#hero .btn{min-height:44px}
+  #veil,#setup{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  #sheet .body,#setup .panel{overflow-wrap:anywhere}
+  #catMenu{max-height:65dvh}
+  #rows{padding-bottom:calc(8.5rem + env(safe-area-inset-bottom))}
+}
+@media (pointer:coarse) and (max-width:375px){
+  #brand{font-size:2.45rem}
+  #top{gap:.5rem}
+  #catBtn{max-width:8.8rem}
+  #grid,.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #tabs button{font-size:1rem;letter-spacing:-.015em}
+}
+/* A landscape iPhone is wider than 700 CSS pixels: avoid falling back to tiny desktop controls. */
+@media (pointer:coarse) and (orientation:landscape) and (min-width:701px) and (max-height:520px){
+  html{font-size:clamp(10px,2.5vh,12px)}
+  :root{--pad:max(1.4rem,env(safe-area-inset-left))}
+  #top{height:calc(4.9rem + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);
+    padding-left:max(1.4rem,env(safe-area-inset-left));padding-right:max(1.4rem,env(safe-area-inset-right));gap:1.2rem}
+  #brand{font-size:2.6rem;margin-right:0}
+  #tabs{gap:.45rem;flex:0 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
+  #tabs::-webkit-scrollbar{display:none}
+  #tabs button{white-space:nowrap;min-height:44px;padding:.5rem .6rem;font-size:1.1rem;flex:none}
+  #search{width:auto;min-width:8rem;max-width:25rem;flex:1 1 12rem;margin-left:auto}
+  #search input{min-width:0;width:100%;font-size:16px}
+  #catBtn,#top .tb{min-width:44px;min-height:44px}
+  #hero{height:auto;min-height:calc(100dvh - 4.9rem);padding-top:4rem}
+  #hero .info{left:max(2rem,env(safe-area-inset-left));bottom:1rem;width:58vw;max-width:56rem}
+  #hero h1{font-size:3.4rem}
+  #hero .logo{max-height:5rem}
+  #hero p{display:-webkit-box;-webkit-line-clamp:2;overflow:hidden}
+  #hero .btn{min-height:44px}
+  #rows{padding-bottom:calc(2rem + env(safe-area-inset-bottom))}
+  #veil{padding:0;overscroll-behavior:contain}
+  #sheet{width:100%;min-height:100dvh;border-radius:0;box-shadow:none}
+  #sheet .banner{min-height:66dvh}
+  #sheet .body{padding-left:max(2rem,env(safe-area-inset-left));padding-right:max(2rem,env(safe-area-inset-right));padding-bottom:max(2rem,env(safe-area-inset-bottom))}
+  #close{position:fixed;top:max(.8rem,env(safe-area-inset-top));right:max(.8rem,env(safe-area-inset-right));min-width:44px;min-height:44px;z-index:60}
+  #setup{padding-left:max(1rem,env(safe-area-inset-left));padding-right:max(1rem,env(safe-area-inset-right));overscroll-behavior:contain}
+  #setup .panel{max-width:65rem}
+  #grid,.grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (prefers-reduced-motion:reduce){
+  #hero .glow,#hero .art,#hero .info,#sheet,#veil,#launch,#vp .vbar,#vp .vtop{animation:none!important;transition:none!important}
+  .strip{scroll-behavior:auto!important}
+}
+
 /* ---------- television: lighter on the graphics chip (blurs, glass and big shadows are slow on a TV's processor) ---------- */
 html.tv *{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 html.tv img{filter:none!important}
