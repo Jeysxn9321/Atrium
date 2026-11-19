@@ -5,7 +5,7 @@ import MobileVLCKit
 /// Plays one video with VLC's engine: every format, every sound track. It starts on the English sound track (or the
 /// language it is told), keeps the screen awake, and tells the page where you are every 20 seconds so Stremio's
 /// "Continue watching" follows you to every device.
-final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
+final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGestureRecognizerDelegate {
     var onProgress: ((Double, Double, Bool) -> Void)?   // position and length in seconds, and whether it ended
     var onClose: (() -> Void)?
 
@@ -130,6 +130,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         let double = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
         double.numberOfTapsRequired = 2
         tap.require(toFail: double)
+        tap.delegate = self
+        double.delegate = self
         view.addGestureRecognizer(tap)
         view.addGestureRecognizer(double)
         // A vertical swipe on the left adjusts screen brightness.
@@ -137,6 +139,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(videoPan(_:)))
         pan.maximumNumberOfTouches = 1
         pan.cancelsTouchesInView = false
+        pan.delegate = self
         view.addGestureRecognizer(pan)
         videoView.isUserInteractionEnabled = true
 
@@ -491,6 +494,16 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         let x = g.location(in: view).x
         if x < view.bounds.width / 2 { player.jumpBackward(10) } else { player.jumpForward(10) }
         showControls()
+    }
+
+    // Protect all Atrium buttons, sliders and menus from the fullscreen overlay gestures.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var current: UIView? = touch.view
+        while let v = current {
+            if v is UIControl { return false }
+            current = v.superview
+        }
+        return true
     }
 
     // MARK: adaptive gestures
