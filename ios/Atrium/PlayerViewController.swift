@@ -24,6 +24,15 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private let subtitleButton = UIButton(type: .system)
     private let fitButton = UIButton(type: .system)
     private let speedButton = UIButton(type: .system)
+    private let tableModeButton = UIButton(type: .system)
+    private let tablePanel = UIView()
+    private let tablePlay = UIButton(type: .system)
+    private let tableProgress = UISlider()
+    private let tableElapsed = UILabel()
+    private let tableRemaining = UILabel()
+    private var videoBottomConstraint: NSLayoutConstraint!
+    private var videoTableHeightConstraint: NSLayoutConstraint!
+    private var tabletopMode = false
     private let gestureHint = UILabel()
     private let playButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
@@ -73,6 +82,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         super.viewDidLayoutSubviews()
         // Recalculate after any fold, window resize, Split View or rotation.
         titleLabel.isHidden = view.bounds.width < 540
+        if tabletopMode { controls.alpha = 0; controls.isUserInteractionEnabled = false }
         applyFill()
     }
 
@@ -102,13 +112,16 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         view.addSubview(videoView)
         controls.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(controls)
+        videoBottomConstraint = videoView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        videoTableHeightConstraint = videoView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.5)
         NSLayoutConstraint.activate([
-            videoView.topAnchor.constraint(equalTo: view.topAnchor), videoView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            videoView.topAnchor.constraint(equalTo: view.topAnchor), videoBottomConstraint,
             videoView.leadingAnchor.constraint(equalTo: view.leadingAnchor), videoView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             controls.topAnchor.constraint(equalTo: view.topAnchor), controls.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             controls.leadingAnchor.constraint(equalTo: view.leadingAnchor), controls.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         buildControls()
+        buildTabletopControls()
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleControls))
         let double = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
@@ -154,7 +167,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             shade.leadingAnchor.constraint(equalTo: controls.leadingAnchor), shade.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
         ])
 
-        for b in [closeButton, audioButton, subtitleButton, fitButton, speedButton, playButton, backButton, forwardButton] {
+        for b in [closeButton, audioButton, subtitleButton, fitButton, speedButton, tableModeButton, playButton, backButton, forwardButton] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.tintColor = .white
             controls.addSubview(b)
@@ -173,6 +186,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         speedButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
         speedButton.accessibilityLabel = "Playback speed"
         speedButton.addTarget(self, action: #selector(speedTapped), for: .touchUpInside)
+        tableModeButton.setImage(symbol("rectangle.split.2x1"), for: .normal)
+        tableModeButton.accessibilityLabel = "Tabletop mode"
+        tableModeButton.addTarget(self, action: #selector(toggleTabletop), for: .touchUpInside)
         playButton.setImage(symbol("pause.fill", 40), for: .normal)
         playButton.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
         backButton.setImage(symbol("gobackward.10", 30), for: .normal)
@@ -230,10 +246,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             speedButton.widthAnchor.constraint(equalToConstant: 44), speedButton.heightAnchor.constraint(equalToConstant: 44),
             subtitleButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), subtitleButton.trailingAnchor.constraint(equalTo: speedButton.leadingAnchor, constant: -4),
             subtitleButton.widthAnchor.constraint(equalToConstant: 44), subtitleButton.heightAnchor.constraint(equalToConstant: 44),
+            tableModeButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            tableModeButton.trailingAnchor.constraint(equalTo: audioButton.leadingAnchor, constant: -4),
+            tableModeButton.widthAnchor.constraint(equalToConstant: 44), tableModeButton.heightAnchor.constraint(equalToConstant: 44),
             audioButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), audioButton.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -4),
             audioButton.widthAnchor.constraint(equalToConstant: 44), audioButton.heightAnchor.constraint(equalToConstant: 44),
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: audioButton.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(equalTo: tableModeButton.leadingAnchor, constant: -8),
 
             playButton.centerXAnchor.constraint(equalTo: controls.centerXAnchor), playButton.centerYAnchor.constraint(equalTo: controls.centerYAnchor),
             playButton.widthAnchor.constraint(equalToConstant: 72), playButton.heightAnchor.constraint(equalToConstant: 72),
@@ -259,6 +278,161 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         view.bringSubviewToFront(messageLabel)
     }
 
+    // MARK: Atrium tabletop player
+    // Video is in the top half, our own controls in the bottom half.
+    // This is a manual mode because public UIKit geometry does not expose a
+    // dependable physical hinge angle. It is not VLC's built-in UI.
+    private func buildTabletopControls() {
+        tablePanel.translatesAutoresizingMaskIntoConstraints = false
+        tablePanel.backgroundColor = UIColor(red: 0.085, green: 0.09, blue: 0.13, alpha: 1)
+        tablePanel.isHidden = true
+        view.addSubview(tablePanel)
+
+        let title = UILabel()
+        title.text = titleText
+        title.textColor = .white
+        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.lineBreakMode = .byTruncatingTail
+
+        func control(_ iconName: String, _ action: Selector) -> UIButton {
+            let button = UIButton(type: .system)
+            button.setImage(symbol(iconName, 24), for: .normal)
+            button.tintColor = .white
+            button.backgroundColor = UIColor.white.withAlphaComponent(0.09)
+            button.layer.cornerRadius = 14
+            button.addTarget(self, action: action, for: .touchUpInside)
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+            return button
+        }
+        let exit = control("xmark", #selector(closeTapped))
+        let expand = control("arrow.up.left.and.arrow.down.right", #selector(toggleTabletop))
+        expand.accessibilityLabel = "Leave tabletop mode"
+        let header = UIStackView(arrangedSubviews: [exit, title, expand])
+        header.axis = .horizontal
+        header.alignment = .center
+        header.spacing = 14
+        exit.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        expand.widthAnchor.constraint(equalToConstant: 48).isActive = true
+
+        tablePlay.setImage(symbol("pause.fill", 30), for: .normal)
+        tablePlay.tintColor = .white
+        tablePlay.backgroundColor = UIColor.white.withAlphaComponent(0.14)
+        tablePlay.layer.cornerRadius = 16
+        tablePlay.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
+        tablePlay.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        tablePlay.widthAnchor.constraint(equalToConstant: 76).isActive = true
+
+        let rewind = control("gobackward.10", #selector(backTapped))
+        let forward = control("goforward.10", #selector(forwardTapped))
+        rewind.widthAnchor.constraint(equalToConstant: 66).isActive = true
+        forward.widthAnchor.constraint(equalToConstant: 66).isActive = true
+        let transport = UIStackView(arrangedSubviews: [rewind, tablePlay, forward])
+        transport.axis = .horizontal
+        transport.spacing = 18
+        transport.alignment = .center
+        transport.distribution = .equalCentering
+
+        tableProgress.minimumTrackTintColor = UIColor(red: 0.95, green: 0.12, blue: 0.20, alpha: 1)
+        tableProgress.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.28)
+        tableProgress.addTarget(self, action: #selector(tableScrubStarted), for: .touchDown)
+        tableProgress.addTarget(self, action: #selector(tableScrubMoved), for: .valueChanged)
+        tableProgress.addTarget(self, action: #selector(tableScrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        for label in [tableElapsed, tableRemaining] {
+            label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            label.textColor = .white
+            label.text = "0:00"
+        }
+        let timeline = UIStackView(arrangedSubviews: [tableElapsed, tableProgress, tableRemaining])
+        timeline.axis = .horizontal
+        timeline.spacing = 12
+        timeline.alignment = .center
+        tableElapsed.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        tableRemaining.widthAnchor.constraint(equalToConstant: 48).isActive = true
+
+        let speed = UIButton(type: .system)
+        speed.setTitle("1×", for: .normal)
+        speed.tintColor = .white
+        speed.setTitleColor(.white, for: .normal)
+        speed.accessibilityLabel = "Playback speed"
+        speed.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        speed.layer.cornerRadius = 12
+        speed.addTarget(self, action: #selector(speedTapped), for: .touchUpInside)
+        speed.tag = 7701
+
+        let fit = control("arrow.up.left.and.arrow.down.right", #selector(fitTapped))
+        fit.accessibilityLabel = "Video size"
+        let sound = control("speaker.wave.2", #selector(showSystemVolume))
+        sound.accessibilityLabel = "Volume"
+        let light = control("sun.max", #selector(showBrightnessHint))
+        light.accessibilityLabel = "Brightness gesture"
+        let extras = UIStackView(arrangedSubviews: [speed, sound, light, fit])
+        extras.axis = .horizontal
+        extras.distribution = .fillEqually
+        extras.spacing = 10
+        extras.heightAnchor.constraint(equalToConstant: 48).isActive = true
+
+        let stack = UIStackView(arrangedSubviews: [header, transport, timeline, extras])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.distribution = .equalSpacing
+        stack.spacing = 10
+        tablePanel.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor),
+            tablePanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tablePanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.leadingAnchor, constant: 18),
+            stack.trailingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.trailingAnchor, constant: -18),
+            stack.topAnchor.constraint(greaterThanOrEqualTo: tablePanel.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: tablePanel.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            stack.centerYAnchor.constraint(equalTo: tablePanel.centerYAnchor)
+        ])
+    }
+
+    @objc private func toggleTabletop() {
+        tabletopMode.toggle()
+        hideWork?.cancel()
+        if tabletopMode {
+            videoBottomConstraint.isActive = false
+            videoTableHeightConstraint.isActive = true
+            controls.alpha = 0
+            controls.isUserInteractionEnabled = false
+            tablePanel.isHidden = false
+            fill = false
+        } else {
+            videoTableHeightConstraint.isActive = false
+            videoBottomConstraint.isActive = true
+            tablePanel.isHidden = true
+            controls.alpha = 1
+            controls.isUserInteractionEnabled = true
+        }
+        view.layoutIfNeeded()
+        applyFill(force: true)
+        if !tabletopMode { showControls() }
+    }
+
+    @objc private func tableScrubStarted() { scrubbing = true; hideWork?.cancel() }
+    @objc private func tableScrubMoved() {
+        let duration = lengthSeconds()
+        tableElapsed.text = clock(Double(tableProgress.value) * duration)
+    }
+    @objc private func tableScrubEnded() {
+        player.position = tableProgress.value
+        scrubbing = false
+    }
+
+    @objc private func showSystemVolume() {
+        showGestureHint("Use iPhone volume buttons")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.gestureHint.isHidden = true }
+    }
+
+    @objc private func showBrightnessHint() {
+        showGestureHint("Swipe up/down on video left side")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in self?.gestureHint.isHidden = true }
+    }
+
     // MARK: showing and hiding the controls
 
     @objc private func toggleControls() {
@@ -266,6 +440,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     private func showControls() {
+        if tabletopMode { return }
         controls.isUserInteractionEnabled = true
         UIView.animate(withDuration: 0.2) { self.controls.alpha = 1 }
         hideWork?.cancel()
@@ -278,6 +453,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     private func hideControls() {
+        if tabletopMode { return }
         UIView.animate(withDuration: 0.25) { self.controls.alpha = 0 } completion: { finished in
             if finished && self.controls.alpha < 0.5 { self.controls.isUserInteractionEnabled = false }
         }
@@ -333,7 +509,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         playbackRateIndex = (playbackRateIndex + 1) % playbackRates.count
         let rate = playbackRates[playbackRateIndex]
         player.rate = rate
-        speedButton.setTitle(rate == 1 ? "1×" : String(format: "%.2g×", rate), for: .normal)
+        let speedLabel = rate == 1 ? "1×" : String(format: "%.2g×", rate)
+        speedButton.setTitle(speedLabel, for: .normal)
+        (tablePanel.viewWithTag(7701) as? UIButton)?.setTitle(speedLabel, for: .normal)
         speedButton.accessibilityValue = "\(rate) times"
         showControls()
     }
@@ -396,6 +574,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
 
     private func updatePlayIcon() {
         playButton.setImage(symbol(player.isPlaying ? "pause.fill" : "play.fill", 40), for: .normal)
+        tablePlay.setImage(symbol(player.isPlaying ? "pause.fill" : "play.fill", 30), for: .normal)
     }
 
     // MARK: time
@@ -418,6 +597,11 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             slider.value = len > 0 ? Float(min(1, pos / len)) : 0
             elapsedLabel.text = clock(pos)
             remainingLabel.text = len > 0 ? "-" + clock(max(0, len - pos)) : "--:--"
+        }
+        if tabletopMode && !scrubbing {
+            tableProgress.value = len > 0 ? Float(min(1, pos / len)) : 0
+            tableElapsed.text = clock(pos)
+            tableRemaining.text = len > 0 ? "-" + clock(max(0, len - pos)) : "--:--"
         }
         updatePlayIcon()
         if started && pos > 1 { lastPos = pos }
