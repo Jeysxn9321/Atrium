@@ -8,7 +8,7 @@ permissions:
   contents: write
 jobs:
   build:
-    runs-on: macos-15-intel
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       COCOAPODS_DISABLE_STATS: "1"
@@ -17,7 +17,17 @@ jobs:
       - name: Versions
         run: |
           mkdir -p logs
-          { xcodebuild -version; swift --version; sw_vers; } 2>&1 | tee logs/versions.txt
+          { xcodebuild -version; swift --version; sw_vers; xcodebuild -showsdks; } 2>&1 | tee logs/versions.txt
+      - name: Require iOS 27.1 SDK for edge-to-edge iPhone Duo
+        run: |
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iPhoneOS SDK: $SDK_VERSION"
+          python3 - "$SDK_VERSION" <<'PY'
+          import sys
+          version = tuple(int(v) for v in sys.argv[1].split('.')[:2])
+          if version < (27, 1):
+              raise SystemExit("iOS 27.1 SDK or later is required for edge-to-edge iPhone Duo layouts")
+          PY
       - name: Generate the project
         run: |
           set -o pipefail
