@@ -32,6 +32,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private let tableRemaining = UILabel()
     private var videoBottomConstraint: NSLayoutConstraint!
     private var videoTableHeightConstraint: NSLayoutConstraint!
+    private var tablePanelTopConstraint: NSLayoutConstraint!
+    private var tablePanelBottomConstraint: NSLayoutConstraint!
     private var tabletopMode = false
     private let gestureHint = UILabel()
     private let playButton = UIButton(type: .system)
@@ -122,6 +124,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         ])
         buildControls()
         buildTabletopControls()
+        configureTabletopShortcut()
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleControls))
         let double = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
@@ -167,7 +170,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             shade.leadingAnchor.constraint(equalTo: controls.leadingAnchor), shade.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
         ])
 
-        for b in [closeButton, audioButton, subtitleButton, fitButton, speedButton, tableModeButton, playButton, backButton, forwardButton] {
+        for b in [closeButton, audioButton, subtitleButton, fitButton, speedButton, playButton, backButton, forwardButton] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.tintColor = .white
             controls.addSubview(b)
@@ -246,13 +249,10 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             speedButton.widthAnchor.constraint(equalToConstant: 44), speedButton.heightAnchor.constraint(equalToConstant: 44),
             subtitleButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), subtitleButton.trailingAnchor.constraint(equalTo: speedButton.leadingAnchor, constant: -4),
             subtitleButton.widthAnchor.constraint(equalToConstant: 44), subtitleButton.heightAnchor.constraint(equalToConstant: 44),
-            tableModeButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            tableModeButton.trailingAnchor.constraint(equalTo: audioButton.leadingAnchor, constant: -4),
-            tableModeButton.widthAnchor.constraint(equalToConstant: 44), tableModeButton.heightAnchor.constraint(equalToConstant: 44),
             audioButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), audioButton.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -4),
             audioButton.widthAnchor.constraint(equalToConstant: 44), audioButton.heightAnchor.constraint(equalToConstant: 44),
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: tableModeButton.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(equalTo: audioButton.leadingAnchor, constant: -8),
 
             playButton.centerXAnchor.constraint(equalTo: controls.centerXAnchor), playButton.centerYAnchor.constraint(equalTo: controls.centerYAnchor),
             playButton.widthAnchor.constraint(equalToConstant: 72), playButton.heightAnchor.constraint(equalToConstant: 72),
@@ -279,6 +279,24 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     // MARK: Atrium tabletop player
+    private func configureTabletopShortcut() {
+        // A persistent entry point, not part of the auto-hiding controls overlay.
+        // Without hinge-angle access, the user must be able to reach this button.
+        view.addSubview(tableModeButton)
+        tableModeButton.backgroundColor = UIColor.black.withAlphaComponent(0.68)
+        tableModeButton.layer.cornerRadius = 22
+        tableModeButton.layer.borderColor = UIColor.white.withAlphaComponent(0.28).cgColor
+        tableModeButton.layer.borderWidth = 1
+        tableModeButton.accessibilityLabel = "Activate Atrium tabletop mode"
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            tableModeButton.topAnchor.constraint(equalTo: safe.topAnchor, constant: 66),
+            tableModeButton.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            tableModeButton.widthAnchor.constraint(equalToConstant: 48),
+            tableModeButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
+    }
+
     // Video is in the top half, our own controls in the bottom half.
     // This is a manual mode because public UIKit geometry does not expose a
     // dependable physical hinge angle. It is not VLC's built-in UI.
@@ -378,11 +396,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         stack.spacing = 10
         tablePanel.addSubview(stack)
 
+        // Do not activate the panel's vertical anchors in fullscreen mode:
+        // its non-zero intrinsic content would otherwise fight the fullscreen video.
+        tablePanelTopConstraint = tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor)
+        tablePanelBottomConstraint = tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([
-            tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor),
             tablePanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tablePanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.leadingAnchor, constant: 18),
             stack.trailingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.trailingAnchor, constant: -18),
             stack.topAnchor.constraint(greaterThanOrEqualTo: tablePanel.topAnchor, constant: 12),
@@ -392,25 +412,32 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     @objc private func toggleTabletop() {
-        tabletopMode.toggle()
+        let enable = !tabletopMode
         hideWork?.cancel()
-        if tabletopMode {
+        // Deactivate all constraints from the old mode before activating the new ones.
+        // Otherwise Auto Layout may break the video height constraint when the
+        // invisible lower control panel still requires a non-zero height.
+        if enable {
             videoBottomConstraint.isActive = false
             videoTableHeightConstraint.isActive = true
-            controls.alpha = 0
-            controls.isUserInteractionEnabled = false
-            tablePanel.isHidden = false
-            fill = false
+            tablePanelTopConstraint.isActive = true
+            tablePanelBottomConstraint.isActive = true
         } else {
+            tablePanelTopConstraint.isActive = false
+            tablePanelBottomConstraint.isActive = false
             videoTableHeightConstraint.isActive = false
             videoBottomConstraint.isActive = true
-            tablePanel.isHidden = true
-            controls.alpha = 1
-            controls.isUserInteractionEnabled = true
         }
+        tabletopMode = enable
+        tablePanel.isHidden = !enable
+        tableModeButton.isHidden = enable
+        controls.alpha = enable ? 0 : 1
+        controls.isUserInteractionEnabled = !enable
+        fill = !enable
+        view.setNeedsLayout()
         view.layoutIfNeeded()
         applyFill(force: true)
-        if !tabletopMode { showControls() }
+        if !enable { showControls() }
     }
 
     @objc private func tableScrubStarted() { scrubbing = true; hideWork?.cancel() }
