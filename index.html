@@ -713,6 +713,56 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   #tabs{justify-content:flex-start;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
   #tabs button{flex:0 0 auto;min-width:7.5rem;padding-left:1rem;padding-right:1rem;scroll-snap-align:center}
 }
+
+/* iPhone Duo / large touch windows: keep navigation on the side, maximize content.
+   Breakpoint follows available WEBVIEW width, not device model or orientation.
+   Folding, multitasking and rotation simply reflow this layout. */
+@media (pointer:coarse) and (min-width:740px) and (min-height:540px) {
+  :root { --duo-rail: clamp(132px, 17vw, 178px); --pad: clamp(1.5rem, 2.4vw, 3rem); }
+  #top {
+    gap: 1rem;
+    height: calc(5.4rem + env(safe-area-inset-top));
+    padding-left: calc(var(--duo-rail) + 1.4rem);
+    padding-right: max(1.4rem,env(safe-area-inset-right));
+  }
+  #brand { margin-right: auto; flex: none; font-size: 3rem; }
+  #tabs {
+    position: fixed; top: 0; left: 0; right: auto; bottom: 0; z-index: 40;
+    box-sizing: border-box; width: var(--duo-rail); max-width: none;
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; 
+    gap: .25rem; overflow-x: hidden; overflow-y: auto;
+    padding: calc(env(safe-area-inset-top) + 5.7rem) .8rem max(1.5rem,env(safe-area-inset-bottom));
+    background: #0b0b0df5; border: 0; border-right: 1px solid var(--line);
+    -webkit-overflow-scrolling: touch; scroll-snap-type: none;
+  }
+  #tabs button {
+    flex: none; display: block; width: 100%; min-height: 44px;
+    border: 0; border-radius: .7rem; padding: .9rem 1.05rem;
+    text-align: left; white-space: normal; font-size: 1.25rem;
+    scroll-snap-align: none; line-height: 1.25;
+  }
+  #tabs button.on { color: #fff; background: #29262b; border: 0; }
+  #tabs button.on::after { display: none; }
+  #hero, #rows { margin-left: var(--duo-rail); }
+  #hero { min-height: 29rem; height: min(64vh, 56vw); }
+  #hero .info { left: max(var(--pad),env(safe-area-inset-left)); width: min(56%,53rem); bottom: 9%; }
+  #hero h1 { font-size: clamp(3.4rem, 5vw, 5.2rem); }
+  #rows.flat { margin-top: calc(6rem + env(safe-area-inset-top)); }
+  #search { position: relative; inset: auto; transform: none; flex: 0 1 26rem; width: auto; min-width: 9rem; max-width: 28rem; padding: .6rem 1.2rem; margin-left: 0; border-radius: 2rem; }
+  #search input { position: static; opacity: 1; caret-color: auto; width: 100%; height: auto; }
+  #search:focus-within { position: relative; inset: auto; transform: none; flex: 0 1 26rem; width: auto; min-width: 9rem; max-width: 28rem; padding: .6rem 1.2rem; border-radius: 2rem; background: #000c; }
+  #search:focus-within input { position: static; opacity: 1; caret-color: auto; height: auto; }
+  #grid,.grid { grid-template-columns: repeat(4,minmax(0,1fr)); }
+  #veil { padding: 0; background: var(--panel); overscroll-behavior: contain; }
+  #sheet { width: 100%; max-width: none; min-height: 100dvh; margin: 0; border-radius: 0; box-shadow: none; }
+  #sheet .body { padding-left: max(2rem,env(safe-area-inset-left)); padding-right: max(2rem,env(safe-area-inset-right)); padding-bottom: max(3rem,env(safe-area-inset-bottom)); }
+  #close { position: fixed; top: max(.8rem,env(safe-area-inset-top)); right: max(.8rem,env(safe-area-inset-right)); min-width: 44px; min-height: 44px; z-index: 60; }
+  #catMenu { max-height: 70dvh; }
+  #setup { padding-left: max(2rem,env(safe-area-inset-left)); padding-right: max(2rem,env(safe-area-inset-right)); }
+}
+/* The web fallback player also needs a genuinely tappable aspect-ratio button. */
+#vp.ui .vfit { pointer-events: auto; }
+
 </style>
 </head>
 <body>
