@@ -43,6 +43,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     private var tablePanelTopConstraint: NSLayoutConstraint!
     private var tablePanelBottomConstraint: NSLayoutConstraint!
     private var tabletopMode = false
+    private var hingeIsAvailable = false
+    private var hingeIsPartiallyOpen = false
+    private var hingeRecheck: DispatchWorkItem?
     private let gestureHint = UILabel()
     private let playButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
@@ -94,6 +97,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         titleLabel.isHidden = view.bounds.width < 540
         if tabletopMode { controls.alpha = 0; controls.isUserInteractionEnabled = false }
         applyFill()
+        if hingeIsAvailable { updateAutomaticTabletop() }
     }
 
     private func requestOuterDisplayLandscapeIfNeeded() {
@@ -133,6 +137,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         buildControls()
         buildTabletopControls()
         configureTabletopShortcut()
+        installAutomaticTabletopDetection()
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleControls))
         let double = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
@@ -307,6 +312,53 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             tableModeButton.widthAnchor.constraint(equalToConstant: 48),
             tableModeButton.heightAnchor.constraint(equalToConstant: 44)
         ])
+    }
+
+    // MARK: iPhone Duo hinge-driven tabletop mode
+    // iOS 27.1 exposes the live hinge through UIHingeInteraction. Use hinge
+    // status for the posture and the active division region for fold direction.
+    // A vertical book fold should NOT enter tabletop: only the horizontal
+    // tabletop fold places the video above the lower interactive panel.
+    private func installAutomaticTabletopDetection() {
+        if #available(iOS 27.1, *) {
+            let interaction = UIHingeInteraction { [weak self] _, update in
+                guard let self else { return }
+                guard let hinge = update.hinge else {
+                    self.hingeIsAvailable = false
+                    self.hingeIsPartiallyOpen = false
+                    self.hingeRecheck?.cancel()
+                    self.tableModeButton.isHidden = self.tabletopMode
+                    return
+                }
+                self.hingeIsAvailable = true
+                self.hingeIsPartiallyOpen = hinge.status == .partiallyOpen
+                // On the iPhone Duo we don't display a redundant manual toggle
+                // when the automatic hinge listener provides updates.
+                self.tableModeButton.isHidden = true
+                self.updateAutomaticTabletop()
+                // Division geometry can update after the hinge callback.
+                self.hingeRecheck?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    self?.updateAutomaticTabletop()
+                }
+                self.hingeRecheck = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+            }
+            view.addInteraction(interaction)
+        }
+    }
+
+    private func updateAutomaticTabletop() {
+        guard hingeIsAvailable, !closing else { return }
+        if #available(iOS 27.1, *) {
+            let divisions = view.reservedRegions(kind: .division)
+            let horizontalFold = divisions.contains {
+                $0.isActive && $0.frame.width > $0.frame.height &&
+                $0.frame.width > view.bounds.width * 0.55
+            }
+            let shouldTabletop = hingeIsPartiallyOpen && horizontalFold
+            if shouldTabletop != tabletopMode { setTabletop(shouldTabletop) }
+        }
     }
 
     // Video is in the top half, our own controls in the bottom half.
@@ -546,7 +598,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     }
 
     @objc private func toggleTabletop() {
-        let enable = !tabletopMode
+        // Backup manual toggle only applies when the hinge API isn't available.
+        guard !hingeIsAvailable else { return }
+        setTabletop(!tabletopMode)
+    }
+
+    private func setTabletop(_ enable: Bool) {
+        guard enable != tabletopMode else { return }
         hideWork?.cancel()
         // Deactivate all constraints from the old mode before activating the new ones.
         // Otherwise Auto Layout may break the video height constraint when the
@@ -564,7 +622,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         }
         tabletopMode = enable
         tablePanel.isHidden = !enable
-        tableModeButton.isHidden = enable
+        tableModeButton.isHidden = hingeIsAvailable || enable
         if enable {
             tableBrightness.value = Float(view.window?.screen.brightness ?? UIScreen.main.brightness)
             updateTabletopMediaMenus()
@@ -892,6 +950,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         closing = true
         ticker?.invalidate()
         hideWork?.cancel()
+        hingeRecheck?.cancel()
         if started {
             let pos = positionSeconds()
             onProgress?(pos > 1 ? pos : lastPos, lengthSeconds(), ended)
