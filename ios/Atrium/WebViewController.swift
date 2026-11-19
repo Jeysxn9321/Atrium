@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import AVFoundation
 
 /// The Atrium page, full screen. The page is the one hosted on GitHub, so every update to it arrives by itself.
 /// What the page cannot do, this app does: play a video with VLC's engine (any format, any sound track), and
@@ -11,6 +12,9 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     static let okSchemes: Set<String> = ["https", "http", "vlc-x-callback", "infuse", "shareddocuments"]
     private var web: WKWebView!
     private weak var player: PlayerViewController?
+    private var startupAudioPlayed = false
+    private var startupAudioEngine: AVAudioEngine?
+    private var startupAudioNode: AVAudioPlayerNode?
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
     override var prefersHomeIndicatorAutoHidden: Bool { false }
@@ -78,6 +82,69 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         guard let json = try? JSONSerialization.data(withJSONObject: data), let text = String(data: json, encoding: .utf8) else { return }
         let js = "window.AtriumNative && window.AtriumNative.on && window.AtriumNative.on('\(event)', \(text));"
         DispatchQueue.main.async { self.web.evaluateJavaScript(js, completionHandler: nil) }
+    }
+
+    // MARK: native intro sound
+    // This original sonic logo is synthesized locally: there is no audio file
+    // in the Web app. Native playback avoids WebKit's autoplay restrictions.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard !startupAudioPlayed,
+              webView.url?.host == Self.host else { return }
+        startupAudioPlayed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.playStartupSound()
+        }
+    }
+
+    private func playStartupSound() {
+        let engine = AVAudioEngine()
+        let node = AVAudioPlayerNode()
+        let sampleRate: Double = 44_100
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else { return }
+        let duration: Double = 1.5
+        let count = AVAudioFrameCount(sampleRate * duration)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count),
+              let channels = buffer.floatChannelData else { return }
+        buffer.frameLength = count
+
+        for frame in 0..<Int(count) {
+            let t = Double(frame) / sampleRate
+            let attack = min(1.0, t / 0.055)
+            let release = min(1.0, max(0.0, (duration - t) / 0.5))
+            let envelope = attack * release
+            // A quiet two-part ascending logo with soft shimmer, not a copied jingle.
+            let low = sin(2 * .pi * 220 * t) * exp(-3.5 * t)
+            let midTime = max(0, t - 0.27)
+            let mid = (t >= 0.27 ? sin(2 * .pi * 329.63 * midTime) * exp(-2.5 * midTime) : 0)
+            let highTime = max(0, t - 0.54)
+            let high = (t >= 0.54 ? sin(2 * .pi * 440 * highTime) * exp(-2.3 * highTime) : 0)
+            let shimmer = sin(2 * .pi * 880 * t) * 0.07 * exp(-3 * t)
+            let sample = Float((low * 0.19 + mid * 0.15 + high * 0.13 + shimmer) * envelope)
+            for channel in 0..<Int(format.channelCount) { channels[channel][frame] = sample }
+        }
+
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            try engine.start()
+            startupAudioEngine = engine
+            startupAudioNode = node
+            node.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+                DispatchQueue.main.async {
+                    self?.startupAudioNode?.stop()
+                    self?.startupAudioEngine?.stop()
+                    self?.startupAudioNode = nil
+                    self?.startupAudioEngine = nil
+                }
+            }
+            node.play()
+        } catch {
+            NSLog("Atrium startup sound unavailable: %@", error.localizedDescription)
+            engine.stop()
+            startupAudioEngine = nil
+            startupAudioNode = nil
+        }
     }
 
     // MARK: navigation
