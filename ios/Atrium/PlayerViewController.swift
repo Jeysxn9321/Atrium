@@ -23,6 +23,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private let audioButton = UIButton(type: .system)
     private let subtitleButton = UIButton(type: .system)
     private let fitButton = UIButton(type: .system)
+    private let speedButton = UIButton(type: .system)
+    private let gestureHint = UILabel()
     private let playButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
@@ -41,6 +43,10 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private var lastCropGeometry: String?
     private var lastPos = 0.0
     private var startedAt = Date.distantPast
+    private let playbackRates: [Float] = [1, 1.25, 1.5, 2]
+    private var playbackRateIndex = 0
+    private var brightnessAtPanStart: CGFloat = 0
+    private var lastSeekHint = Date.distantPast
 
     init(url: URL, title: String, start: Double, audioLanguage: String) {
         self.url = url
@@ -111,6 +117,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         tap.require(toFail: double)
         view.addGestureRecognizer(tap)
         view.addGestureRecognizer(double)
+        // A vertical swipe on the left adjusts screen brightness.
+        // A horizontal swipe scrubs relative to the current playback position.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(videoPan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = false
+        videoView.addGestureRecognizer(pan)
+        videoView.isUserInteractionEnabled = true
 
         player.delegate = self
         player.drawable = videoView
@@ -142,7 +155,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             shade.leadingAnchor.constraint(equalTo: controls.leadingAnchor), shade.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
         ])
 
-        for b in [closeButton, audioButton, subtitleButton, fitButton, playButton, backButton, forwardButton] {
+        for b in [closeButton, audioButton, subtitleButton, fitButton, speedButton, playButton, backButton, forwardButton] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.tintColor = .white
             controls.addSubview(b)
@@ -157,6 +170,10 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         fitButton.accessibilityLabel = "Toggle full screen video crop"
         fitButton.accessibilityHint = "Switch between filling the screen and showing the whole picture"
         fitButton.addTarget(self, action: #selector(fitTapped), for: .touchUpInside)
+        speedButton.setTitle("1×", for: .normal)
+        speedButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+        speedButton.accessibilityLabel = "Playback speed"
+        speedButton.addTarget(self, action: #selector(speedTapped), for: .touchUpInside)
         playButton.setImage(symbol("pause.fill", 40), for: .normal)
         playButton.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
         backButton.setImage(symbol("gobackward.10", 30), for: .normal)
@@ -178,6 +195,16 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         messageLabel.numberOfLines = 0
         messageLabel.text = "Loading…"
         view.addSubview(messageLabel)
+        gestureHint.translatesAutoresizingMaskIntoConstraints = false
+        gestureHint.textColor = .white
+        gestureHint.backgroundColor = UIColor.black.withAlphaComponent(0.65)
+        gestureHint.layer.cornerRadius = 12
+        gestureHint.clipsToBounds = true
+        gestureHint.textAlignment = .center
+        gestureHint.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
+        gestureHint.isHidden = true
+        gestureHint.isUserInteractionEnabled = false
+        view.addSubview(gestureHint)
 
         for l in [elapsedLabel, remainingLabel] {
             l.translatesAutoresizingMaskIntoConstraints = false
@@ -200,7 +227,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             closeButton.widthAnchor.constraint(equalToConstant: 44), closeButton.heightAnchor.constraint(equalToConstant: 44),
             fitButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), fitButton.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -16),
             fitButton.widthAnchor.constraint(equalToConstant: 44), fitButton.heightAnchor.constraint(equalToConstant: 44),
-            subtitleButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), subtitleButton.trailingAnchor.constraint(equalTo: fitButton.leadingAnchor, constant: -4),
+            speedButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), speedButton.trailingAnchor.constraint(equalTo: fitButton.leadingAnchor, constant: -4),
+            speedButton.widthAnchor.constraint(equalToConstant: 44), speedButton.heightAnchor.constraint(equalToConstant: 44),
+            subtitleButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), subtitleButton.trailingAnchor.constraint(equalTo: speedButton.leadingAnchor, constant: -4),
             subtitleButton.widthAnchor.constraint(equalToConstant: 44), subtitleButton.heightAnchor.constraint(equalToConstant: 44),
             audioButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor), audioButton.trailingAnchor.constraint(equalTo: subtitleButton.leadingAnchor, constant: -4),
             audioButton.widthAnchor.constraint(equalToConstant: 44), audioButton.heightAnchor.constraint(equalToConstant: 44),
@@ -223,6 +252,10 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
 
             messageLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor), messageLabel.topAnchor.constraint(equalTo: playButton.bottomAnchor, constant: 24),
             messageLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32), messageLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
+            gestureHint.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            gestureHint.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            gestureHint.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            gestureHint.heightAnchor.constraint(equalToConstant: 44),
         ])
         view.bringSubviewToFront(messageLabel)
     }
@@ -254,6 +287,55 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     @objc private func doubleTapped(_ g: UITapGestureRecognizer) {
         let x = g.location(in: view).x
         if x < view.bounds.width / 2 { player.jumpBackward(10) } else { player.jumpForward(10) }
+        showControls()
+    }
+
+    // MARK: adaptive gestures
+    // UIKit reports the actual active window size even after folding/rotation.
+    // This intentionally does not infer hinge angle or ambient light.
+    @objc private func videoPan(_ gesture: UIPanGestureRecognizer) {
+        let point = gesture.location(in: view)
+        let velocity = gesture.translation(in: view)
+        switch gesture.state {
+        case .began:
+            brightnessAtPanStart = view.window?.screen.brightness ?? UIScreen.main.brightness
+        case .changed:
+            let height = max(1, view.bounds.height)
+            let width = max(1, view.bounds.width)
+            if abs(velocity.y) > abs(velocity.x), point.x < width * 0.5 {
+                let newValue = max(0.05, min(1, brightnessAtPanStart - velocity.y / height))
+                (view.window?.screen ?? UIScreen.main).brightness = newValue
+                showGestureHint("Brightness \(Int(newValue * 100))%")
+            } else if abs(velocity.x) > abs(velocity.y), abs(velocity.x) > 20 {
+                let seconds = Int((velocity.x / width * 90).rounded())
+                showGestureHint(seconds >= 0 ? "+\(seconds)s" : "\(seconds)s")
+            }
+        case .ended:
+            let width = max(1, view.bounds.width)
+            if abs(velocity.x) > abs(velocity.y), abs(velocity.x) > 35 {
+                let seconds = Int((velocity.x / width * 90).rounded())
+                if seconds > 0 { player.jumpForward(Int32(seconds)) }
+                if seconds < 0 { player.jumpBackward(Int32(-seconds)) }
+            }
+            gestureHint.isHidden = true
+            showControls()
+        case .cancelled, .failed:
+            gestureHint.isHidden = true
+        default: break
+        }
+    }
+
+    private func showGestureHint(_ text: String) {
+        gestureHint.text = text
+        gestureHint.isHidden = false
+    }
+
+    @objc private func speedTapped() {
+        playbackRateIndex = (playbackRateIndex + 1) % playbackRates.count
+        let rate = playbackRates[playbackRateIndex]
+        player.rate = rate
+        speedButton.setTitle(rate == 1 ? "1×" : String(format: "%.2g×", rate), for: .normal)
+        speedButton.accessibilityValue = "\(rate) times"
         showControls()
     }
 
