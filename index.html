@@ -417,8 +417,10 @@ html.tv #setup .tvcode{font-size:7rem}
 #openBar .x{font-size:1.8rem;line-height:1;color:var(--faint);padding:.3rem .9rem .5rem}
 
 /* ---------- the player inside Atrium ---------- */
-#vp{position:fixed;inset:0;z-index:500;background:#000;cursor:none;user-select:none}
-#vp video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#vp{position:fixed;inset:0;width:100vw;width:100dvw;height:100vh;height:100dvh;z-index:500;background:#000;cursor:none;user-select:none;overflow:hidden}
+#vp video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;background:#000}
+#vp .vfit{border:1px solid #fff7;border-radius:.5rem;background:#0009;color:#fff;padding:.75rem 1.1rem;min-height:44px;cursor:pointer;font:inherit;touch-action:manipulation}
+@media (pointer:coarse){#vp{cursor:auto}#vp .vfit{display:inline-flex;align-items:center;justify-content:center}}
 #vp .vtop{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 2.4rem) 5vw 6rem;background:linear-gradient(180deg,#000b,#0000);opacity:0;transition:opacity .25s;pointer-events:none}
 #vp .vtop b{font-family:var(--display);font-weight:400;font-size:3.4rem;letter-spacing:.03em}
 #vp .vbar{position:absolute;left:0;right:0;bottom:0;padding:6rem 5vw calc(env(safe-area-inset-bottom) + 3rem);background:linear-gradient(0deg,#000c,#0000);opacity:0;transition:opacity .25s;pointer-events:none}
@@ -1234,7 +1236,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const box = document.createElement('div');
     box.id = 'vp';
     box.innerHTML = '<video playsinline autoplay></video><div class="vtop"><b></b></div><div class="vnote"></div><div class="vmsg"></div>' +
-      '<div class="vbar"><div class="vrail"><i></i></div><div class="vrow"><span class="vt">0:00</span><span class="vkeys">OK pause · ◀ ▶ 10 s · ▲ ▼ picture · Back close</span><span class="vd">0:00</span></div></div>';
+      '<div class="vbar"><div class="vrail"><i></i></div><div class="vrow"><span class="vt">0:00</span><span class="vkeys">OK pause · ◀ ▶ 10 s · ▲ ▼ picture · Back close</span><button class="vfit" type="button" aria-label="Change picture fit">Fill screen</button><span class="vd">0:00</span></div></div>';
     document.body.appendChild(box);
     const v = box.querySelector('video'), msg = box.querySelector('.vmsg'), bar = box.querySelector('.vbar'), top = box.querySelector('.vtop');
     top.querySelector('b').textContent = name || '';
@@ -1243,14 +1245,16 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
     const say = t => { msg.textContent = t || ''; msg.classList.toggle('on', !!t); };
     // Picture: Fit keeps the whole picture (bars where it does not fill the screen), Fill crops the edges so no bar is left, Stretch fills the screen by stretching.
     const FITS = [['contain', 'Fit: the whole picture'], ['cover', 'Fill: no bars, edges cropped'], ['fill', 'Stretch: no bars, picture stretched']];
-    let fi = Math.max(0, FITS.findIndex(f => f[0] === String(mem.get('atrium.m.fit', 'contain'))));
+    let fi = Math.max(0, FITS.findIndex(f => f[0] === String(mem.get('atrium.m.fit', matchMedia('(pointer:coarse) and (max-width:1000px)').matches ? 'cover' : 'contain'))));
     const note = box.querySelector('.vnote'); let noteT = 0;
     const applyFit = announce => {
       v.style.objectFit = FITS[fi][0]; mem.set('atrium.m.fit', FITS[fi][0]);
+      const fitBtn = box.querySelector('.vfit'); if (fitBtn) { fitBtn.textContent = FITS[fi][0] === 'cover' ? 'Fill screen' : FITS[fi][0] === 'contain' ? 'Fit screen' : 'Stretch'; fitBtn.setAttribute('aria-label', FITS[fi][1]); }
       if (announce) { note.textContent = FITS[fi][1]; note.classList.add('on'); clearTimeout(noteT); noteT = setTimeout(() => note.classList.remove('on'), 2200); }
     };
     const nextFit = d => { fi = (fi + d + FITS.length) % FITS.length; applyFit(true); show(); };
     applyFit(false);
+    box.querySelector('.vfit').addEventListener('click', ev => { ev.stopPropagation(); nextFit(1); });
     const save = async (ended) => {
       const dur = isFinite(v.duration) ? v.duration : 0, pos = v.currentTime || 0, now = new Date().toISOString();
       if (!started || (!ended && pos < 3)) return;
