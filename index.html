@@ -763,6 +763,13 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
 /* The web fallback player also needs a genuinely tappable aspect-ratio button. */
 #vp.ui .vfit { pointer-events: auto; }
 
+/* Do not overlap Continue Watching with the hero on the unfolded iPhone Duo. */
+@media (pointer:coarse) and (min-width:740px) and (min-height:540px) {
+  #rows:not(.flat) { margin-top: 1rem; }
+  #contRow h2 { position: relative; z-index: 3; margin-bottom: 1rem; }
+  #contRow .card.wide { width: clamp(190px, 24vw, 290px); height: auto; aspect-ratio: 16 / 9; }
+  #contRow .card .cap { font-size: 1rem; }
+}
 /* Keep the Home browsing rail and progress cards readable in all Duo sizes. */
 #contRow .strip {scroll-padding-inline:var(--pad)}
 #contRow .card {scroll-snap-align:start}
