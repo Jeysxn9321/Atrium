@@ -777,6 +777,52 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   #contRow .strip {overscroll-behavior-inline:contain}
   #contRow .card {touch-action:pan-x}
 }
+
+/* iPhone Duo portrait: search collapses to a button beside Settings.
+   Expanded state smoothly reveals the input without hiding the Atrium brand. */
+@media (orientation:portrait) and (pointer:coarse) and (max-width:900px) {
+  #top {position:fixed}
+  #top #setBtn {margin-left:auto; flex:none; min-width:44px; min-height:44px; z-index:47}
+  #top #search {
+    position:absolute !important;
+    top:calc(env(safe-area-inset-top) + .35rem) !important;
+    right:calc(max(1.2rem,env(safe-area-inset-right)) + 5.1rem) !important;
+    left:auto !important; bottom:auto !important;
+    transform:none !important;
+    margin:0 !important;
+    box-sizing:border-box;
+    height:44px; min-height:44px; min-width:44px;
+    width:44px !important; max-width:none !important;
+    padding:0 !important; gap:0 !important;
+    display:flex; justify-content:center; align-items:center;
+    border-radius:24px; background:#0009; z-index:46;
+    cursor:pointer; overflow:hidden;
+    transition:width .32s cubic-bezier(.22,1,.36,1), background .22s, border-color .22s, box-shadow .22s !important;
+  }
+  #top #search svg {width:20px; height:20px; opacity:1; flex:none; transition:opacity .17s}
+  #top #search input {
+    display:block !important; position:absolute !important;
+    top:0 !important; bottom:0 !important; left:45px !important; right:12px !important;
+    transform:none !important; width:calc(100% - 57px) !important; height:100% !important;
+    padding:0 !important; margin:0 !important;
+    box-sizing:border-box; opacity:0 !important; pointer-events:none;
+    font-size:16px !important; user-select:text;
+    transition:opacity .2s ease !important;
+  }
+  #top #search.search-open {
+    width:calc(100% - max(1.2rem,env(safe-area-inset-left)) - max(1.2rem,env(safe-area-inset-right)) - 5.1rem) !important;
+    justify-content:flex-start; padding-left:14px !important;
+    background:#101014f7; border-color:#ffffff6b; box-shadow:0 10px 28px #0008;
+    cursor:text;
+  }
+  #top #search.search-open input {opacity:1 !important; pointer-events:auto}
+  #top #search.search-open svg {opacity:.85}
+  #top #brand {transition:opacity .2s ease}
+  #top:has(#search.search-open) #brand {opacity:0; pointer-events:none}
+}
+@media (prefers-reduced-motion:reduce) {
+  #search, #search input, #brand {transition:none !important}
+}
 </style>
 </head>
 <body>
@@ -4281,6 +4327,43 @@ async function boot() {
   $$('#top [data-tab]').forEach(b => { b.onclick = () => { streamsCache.clear(); tab = b.dataset.tab; person = null; $('#q').value = ''; render(); }; });
   $('#brand').onclick = () => { tab = 'home'; person = null; $('#q').value = ''; render(); };
   $('#q').oninput = ev => { clearTimeout(searchTimer); person = null; const t = ev.target.value.trim(); searchTimer = setTimeout(() => doSearch(t), 350); };
+  // On portrait iPhone Duo, show a search icon directly before Settings.
+  // Opening expands the field with a width/fade transition; dismiss with Escape
+  // or tapping outside. Never discard the query until the user clears it.
+  const searchBox = $('#search');
+  const searchInput = $('#q');
+  const searchPortrait = () => window.matchMedia('(orientation: portrait) and (pointer: coarse) and (max-width: 900px)').matches;
+  const closeCompactSearch = () => {
+    if (!searchPortrait()) return;
+    searchBox.classList.remove('search-open');
+    if (document.activeElement === searchInput) searchInput.blur();
+    searchBox.setAttribute('role', 'button');
+    searchBox.setAttribute('aria-label', 'Open search');
+  };
+  searchBox.setAttribute('role', 'button');
+  searchBox.setAttribute('aria-label', 'Open search');
+  searchBox.setAttribute('tabindex', '0');
+  searchBox.addEventListener('click', ev => {
+    if (!searchPortrait() || searchBox.classList.contains('search-open')) return;
+    ev.preventDefault();
+    searchBox.classList.add('search-open');
+    searchBox.removeAttribute('role');
+    searchBox.removeAttribute('aria-label');
+    requestAnimationFrame(() => searchInput.focus());
+  });
+  searchBox.addEventListener('keydown', ev => {
+    if ((ev.key === 'Enter' || ev.key === ' ') && !searchBox.classList.contains('search-open') && searchPortrait()) {
+      ev.preventDefault(); searchBox.click();
+    }
+    if (ev.key === 'Escape') closeCompactSearch();
+  });
+  document.addEventListener('pointerdown', ev => {
+    if (searchBox.classList.contains('search-open') && !searchBox.contains(ev.target)) closeCompactSearch();
+  });
+  window.addEventListener('resize', () => {
+    if (!searchPortrait() && searchBox.classList.contains('search-open')) searchBox.classList.remove('search-open');
+  });
+
   $('#veil').onclick = ev => { if (ev.target.id === 'veil') closeDetail(); };
   $('#peek').addEventListener('mouseleave', peekHide);
   document.addEventListener('wheel', peekHide, { passive: true });
