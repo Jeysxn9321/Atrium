@@ -37,7 +37,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     private var pickedAudio = false
     private var closing = false
     private var lastSent = Date.distantPast
-    private var fill = false
+    private var fill = true
     private var lastPos = 0.0
     private var startedAt = Date.distantPast
 
@@ -52,7 +52,30 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .allButUpsideDown }
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        requestLandscape()
+        applyFill()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        applyFill()
+    }
+
+    private func requestLandscape() {
+        if #available(iOS 16.0, *) {
+            setNeedsUpdateOfSupportedInterfaceOrientations()
+            view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape)) { error in
+                NSLog("Atrium landscape request: %@", error.localizedDescription)
+            }
+        } else {
+            UIViewController.attemptRotationToDeviceOrientation()
+        }
+    }
 
     // MARK: setup
 
@@ -89,6 +112,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         lastPos = max(0, startAt)
         player.media = media
         player.play()
+        applyFill()
         UIApplication.shared.isIdleTimerDisabled = true
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
@@ -122,6 +146,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
         subtitleButton.setImage(symbol("captions.bubble"), for: .normal)
         subtitleButton.showsMenuAsPrimaryAction = true
         fitButton.setImage(symbol("arrow.up.left.and.arrow.down.right"), for: .normal)
+        fitButton.accessibilityLabel = "Toggle full screen video crop"
+        fitButton.accessibilityHint = "Switch between filling the screen and showing the whole picture"
         fitButton.addTarget(self, action: #selector(fitTapped), for: .touchUpInside)
         playButton.setImage(symbol("pause.fill", 40), for: .normal)
         playButton.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
@@ -200,6 +226,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     private func showControls() {
+        controls.isUserInteractionEnabled = true
         UIView.animate(withDuration: 0.2) { self.controls.alpha = 1 }
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -211,7 +238,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
     }
 
     private func hideControls() {
-        UIView.animate(withDuration: 0.25) { self.controls.alpha = 0 }
+        UIView.animate(withDuration: 0.25) { self.controls.alpha = 0 } completion: { finished in
+            if finished && self.controls.alpha < 0.5 { self.controls.isUserInteractionEnabled = false }
+        }
     }
 
     @objc private func doubleTapped(_ g: UITapGestureRecognizer) {
@@ -238,12 +267,17 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
             player.videoCropGeometry = nil
             player.scaleFactor = 0
         }
+        fitButton.setImage(symbol(fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"), for: .normal)
         showControls()
     }
     private func applyFill() {
         let size = view.bounds.size
         guard fill, size.width > 0, size.height > 0 else { return }
-        "\(Int(size.width)):\(Int(size.height))".withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
+        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+        let width = Int((size.width * scale).rounded())
+        let height = Int((size.height * scale).rounded())
+        guard width > 0, height > 0 else { return }
+        "\(width):\(height)".withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
     }
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
@@ -360,6 +394,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate {
                 if !self.started {
                     self.started = true
                     self.startedAt = Date()
+                    self.applyFill()
                     self.lastSent = Date()   // the first report comes 20 s in, after the resume point has landed
                     self.player.currentVideoSubTitleIndex = -1
                 }
