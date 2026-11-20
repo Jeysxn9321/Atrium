@@ -15,6 +15,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var startupAudioPlayed = false
     private var startupAudioEngine: AVAudioEngine?
     private var startupAudioNode: AVAudioPlayerNode?
+    private var preparedStartupBuffer: AVAudioPCMBuffer?
+    private let startupAudioQueue = DispatchQueue(label: "atrium.intro.audio", qos: .userInitiated)
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
     override var prefersHomeIndicatorAutoHidden: Bool { false }
@@ -46,6 +48,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             web.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             web.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+        prepareStartupAudio()
         web.load(URLRequest(url: WebViewController.home))
     }
 
@@ -96,35 +99,52 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         }
     }
 
+    // Generate the 1.5-second sonic logo off the main thread. WebKit is
+    // simultaneously decoding and painting its opening frames; synthesis on
+    // the main queue previously caused visible startup frame drops.
+    private func prepareStartupAudio() {
+        startupAudioQueue.async { [weak self] in
+            let sampleRate: Double = 44_100
+            let duration: Double = 1.5
+            let count = AVAudioFrameCount(sampleRate * duration)
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count),
+                  let channels = buffer.floatChannelData else { return }
+            buffer.frameLength = count
+            for frame in 0..<Int(count) {
+                let t = Double(frame) / sampleRate
+                let attack = min(1.0, t / 0.055)
+                let release = min(1.0, max(0.0, (duration - t) / 0.5))
+                let envelope = attack * release
+                let low = sin(2 * .pi * 220 * t) * exp(-3.5 * t)
+                let midTime = max(0, t - 0.27)
+                let mid = (t >= 0.27 ? sin(2 * .pi * 329.63 * midTime) * exp(-2.5 * midTime) : 0)
+                let highTime = max(0, t - 0.54)
+                let high = (t >= 0.54 ? sin(2 * .pi * 440 * highTime) * exp(-2.3 * highTime) : 0)
+                let shimmer = sin(2 * .pi * 880 * t) * 0.07 * exp(-3 * t)
+                let sample = Float((low * 0.19 + mid * 0.15 + high * 0.13 + shimmer) * envelope)
+                for channel in 0..<Int(format.channelCount) { channels[channel][frame] = sample }
+            }
+            DispatchQueue.main.async { [weak self] in
+                self?.preparedStartupBuffer = buffer
+            }
+        }
+    }
+
     private func playStartupSound() {
+        // Never generate thousands of samples during the first WebKit paint.
+        // If preparation is not complete, defer playback until it is ready.
+        guard let buffer = preparedStartupBuffer else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.playStartupSound()
+            }
+            return
+        }
+        preparedStartupBuffer = nil
         let engine = AVAudioEngine()
         let node = AVAudioPlayerNode()
-        let sampleRate: Double = 44_100
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else { return }
-        let duration: Double = 1.5
-        let count = AVAudioFrameCount(sampleRate * duration)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count),
-              let channels = buffer.floatChannelData else { return }
-        buffer.frameLength = count
-
-        for frame in 0..<Int(count) {
-            let t = Double(frame) / sampleRate
-            let attack = min(1.0, t / 0.055)
-            let release = min(1.0, max(0.0, (duration - t) / 0.5))
-            let envelope = attack * release
-            // A quiet two-part ascending logo with soft shimmer, not a copied jingle.
-            let low = sin(2 * .pi * 220 * t) * exp(-3.5 * t)
-            let midTime = max(0, t - 0.27)
-            let mid = (t >= 0.27 ? sin(2 * .pi * 329.63 * midTime) * exp(-2.5 * midTime) : 0)
-            let highTime = max(0, t - 0.54)
-            let high = (t >= 0.54 ? sin(2 * .pi * 440 * highTime) * exp(-2.3 * highTime) : 0)
-            let shimmer = sin(2 * .pi * 880 * t) * 0.07 * exp(-3 * t)
-            let sample = Float((low * 0.19 + mid * 0.15 + high * 0.13 + shimmer) * envelope)
-            for channel in 0..<Int(format.channelCount) { channels[channel][frame] = sample }
-        }
-
         engine.attach(node)
-        engine.connect(node, to: engine.mainMixerNode, format: format)
+        engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
         do {
             try AVAudioSession.sharedInstance().setActive(true)
             try engine.start()
