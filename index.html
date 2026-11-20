@@ -406,6 +406,26 @@ html.seen #intro{display:none}
     100% {opacity:1;transform:translate3d(0,0,0) scale3d(1.05,1.05,1)}
   }
 }
+/* iOS intro: hold a static precomposited glyph layer and animate its texture.
+   The original DOM text remains the source, preserving the exact logo font. */
+@supports (-webkit-touch-callout: none) {
+  html:not(.seen) #intro b {
+    display:block;
+    contain:paint;
+    transform-origin:50% 50%;
+    -webkit-transform-style:flat;
+    transform-style:flat;
+    -webkit-perspective:none;
+    perspective:none;
+    -webkit-font-smoothing:antialiased;
+    animation:atriumIntroComposited 2.4s cubic-bezier(.16,.8,.2,1) both;
+  }
+  @keyframes atriumIntroComposited {
+    0% {opacity:0;transform:translate3d(0,0,0) scale(.8)}
+    45% {opacity:1}
+    100% {opacity:1;transform:translate3d(0,0,0) scale(1.05)}
+  }
+}
 /* iOS startup compositing: isolate the splash from the live home page.
    Keep background shimmer and hero animations paused until the splash fades. */
 @supports (-webkit-touch-callout: none) {
