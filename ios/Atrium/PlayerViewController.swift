@@ -840,6 +840,17 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             tableRemaining.text = len > 0 ? "-" + clock(max(0, len - pos)) : "--:--"
         }
         updatePlayIcon()
+        // VLC can report .buffering even after decoded frames start advancing.
+        // Clear the startup overlay as soon as playback makes measurable progress.
+        if pos > 0.15 && player.isPlaying && !started {
+            started = true
+            startedAt = Date()
+            lastSent = Date()
+            applyFill(force: true)
+        }
+        if started && !(messageLabel.text ?? "").isEmpty && player.state != .error {
+            messageLabel.text = ""
+        }
         if started && pos > 1 { lastPos = pos }
         if started && !pickedAudio && Date().timeIntervalSince(startedAt) < 12 && Date().timeIntervalSince(startedAt) > 1 { pickLanguage(); rebuildMenus() }
         if started && player.isPlaying && Date().timeIntervalSince(lastSent) > 20 { send(ended: false) }
