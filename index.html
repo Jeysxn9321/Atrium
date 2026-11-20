@@ -384,10 +384,19 @@ html.seen #intro{display:none}
   html:not(.seen) #intro b {
     letter-spacing:.06em;
     filter:none;
+    /* Avoid re-rasterizing a huge blurred text shadow while scaling. */
+    text-shadow:none;
+    -webkit-font-smoothing:antialiased;
+    -webkit-transform:translate3d(0,0,0);
+    transform:translate3d(0,0,0);
     will-change:transform,opacity;
     animation:atriumIntroIOS 2.4s cubic-bezier(.16,.8,.2,1) both;
   }
-  html:not(.seen) #intro i {will-change:transform,opacity}
+  html:not(.seen) #intro i {
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    will-change:transform,opacity;
+  }
   html:not(.seen) #intro {will-change:opacity}
   @keyframes atriumIntroIOS {
     0% {opacity:0;transform:scale(.8)}
