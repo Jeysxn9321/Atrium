@@ -377,6 +377,23 @@ html.seen #intro{display:none}
   100%{opacity:1;letter-spacing:.06em;transform:scale(1.05);filter:blur(0)}}
 @keyframes introLine{0%,35%{transform:scaleX(0);opacity:0}75%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1.08);opacity:.9}}
 @keyframes introOut{to{opacity:0;visibility:hidden}}
+/* iOS startup: animate only compositor-friendly opacity and transforms.
+   Avoid per-frame letter-spacing layout and expensive animated blur. */
+@supports (-webkit-touch-callout: none) {
+  html:not(.seen) #intro b {
+    letter-spacing:.06em;
+    filter:none;
+    will-change:transform,opacity;
+    animation:atriumIntroIOS 2.4s cubic-bezier(.16,.8,.2,1) both;
+  }
+  html:not(.seen) #intro i {will-change:transform,opacity}
+  html:not(.seen) #intro {will-change:opacity}
+  @keyframes atriumIntroIOS {
+    0% {opacity:0;transform:scale(.8)}
+    45% {opacity:1}
+    100% {opacity:1;transform:scale(1.05)}
+  }
+}
 /* ================= Atrium off the PC =================
    Added after Atrium's own styles. First what holds on every device without the PC, then the
    phone layout (a narrow screen held upright), then touch screens in general. */
