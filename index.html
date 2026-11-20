@@ -18,6 +18,7 @@
 <link rel="preconnect" href="https://www.youtube.com">
 <script>
 try { if (sessionStorage.getItem('atrium.intro')) document.documentElement.classList.add('seen'); else sessionStorage.setItem('atrium.intro', '1'); } catch (e) {}
+if (!document.documentElement.classList.contains('seen')) document.documentElement.classList.add('atrium-intro-running');
 </script>
 <style>
 /* Bebas Neue (SIL Open Font License 1.1), for the name and the titles */
@@ -392,6 +393,28 @@ html.seen #intro{display:none}
     0% {opacity:0;transform:scale(.8)}
     45% {opacity:1}
     100% {opacity:1;transform:scale(1.05)}
+  }
+}
+/* iOS startup compositing: isolate the splash from the live home page.
+   Keep background shimmer and hero animations paused until the splash fades. */
+@supports (-webkit-touch-callout: none) {
+  html:not(.seen) #intro {
+    isolation:isolate;
+    contain:layout paint style;
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    backface-visibility:hidden;
+  }
+  html:not(.seen) #intro b,
+  html:not(.seen) #intro i {
+    -webkit-backface-visibility:hidden;
+    backface-visibility:hidden;
+  }
+  html.atrium-intro-running #hero .glow,
+  html.atrium-intro-running #hero .art,
+  html.atrium-intro-running #hero .info,
+  html.atrium-intro-running .skel {
+    animation-play-state:paused !important;
   }
 }
 /* ================= Atrium off the PC =================
@@ -874,6 +897,18 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
 <div id="launch"><div class="glow"></div><div class="bg"></div><div class="box"><img class="logo" alt=""><h1></h1><div class="sub"></div>
   <div class="st"><div class="spin"></div><span></span></div><div class="q"></div><div class="remote"><button class="rb" data-do="back" title="Back 10 seconds">-10</button><button class="rb big" data-do="toggle" title="Pause / play"></button><button class="rb" data-do="fwd" title="Forward 10 seconds">+10</button><button class="rb" data-do="mute" title="Sound off / on"></button><button class="rb" data-do="stop" title="Stop playing on the TV"></button></div><button class="btn more">Back</button></div></div>
 <div id="intro"><b>Atrium</b><i></i></div>
+<script>
+(function () {
+  const intro = document.getElementById('intro');
+  const finish = () => document.documentElement.classList.remove('atrium-intro-running');
+  if (!intro || document.documentElement.classList.contains('seen')) { finish(); return; }
+  intro.addEventListener('animationend', function (event) {
+    if (event.target === intro && event.animationName === 'introOut') finish();
+  }, { once: true });
+  // Recovery if WebKit cancels the fade animation during page restoration.
+  window.setTimeout(finish, 3600);
+})();
+</script>
 <div id="toast"><div class="spin"></div><span></span></div>
 
 <script>
