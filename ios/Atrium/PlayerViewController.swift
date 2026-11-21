@@ -365,16 +365,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     // This is a manual mode because public UIKit geometry does not expose a
     // dependable physical hinge angle. It is not VLC's built-in UI.
     private func buildTabletopControls() {
+        // Reference-matched Duo dashboard: video above, dark tiled controls below.
         tablePanel.translatesAutoresizingMaskIntoConstraints = false
-        tablePanel.backgroundColor = UIColor(red: 0.115, green: 0.128, blue: 0.171, alpha: 1)
-        tablePanel.layer.cornerRadius = 22
-        tablePanel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        tablePanel.backgroundColor = UIColor(red: 0.105, green: 0.121, blue: 0.158, alpha: 1)
         tablePanel.clipsToBounds = true
         tablePanel.isHidden = true
         view.addSubview(tablePanel)
 
-        // Scrollable content prevents controls disappearing on shorter Duo windows,
-        // Split View or when accessibility text sizes increase.
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsVerticalScrollIndicator = false
@@ -383,197 +380,160 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         tablePanel.addSubview(scroll)
         tableScrollView = scroll
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.topAnchor, constant: 5),
-            scroll.leadingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.bottomAnchor, constant: -5)
+            scroll.topAnchor.constraint(equalTo: tablePanel.topAnchor, constant: 3),
+            scroll.leadingAnchor.constraint(equalTo: tablePanel.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: tablePanel.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: tablePanel.safeAreaLayoutGuide.bottomAnchor)
         ])
 
-        func button(_ icon: String, _ label: String, _ action: Selector? = nil) -> UIButton {
+        let tileColor = UIColor(red: 0.15, green: 0.17, blue: 0.22, alpha: 1)
+        func tile(_ icon: String, _ label: String, _ action: Selector? = nil) -> UIButton {
             let b = UIButton(type: .system)
-            b.translatesAutoresizingMaskIntoConstraints = false
             b.setImage(symbol(icon, 22), for: .normal)
             b.tintColor = .white
+            b.backgroundColor = tileColor
+            b.layer.cornerRadius = 4
+            b.layer.borderWidth = 0.6
+            b.layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
             b.accessibilityLabel = label
-            b.backgroundColor = UIColor.white.withAlphaComponent(0.075)
-            b.layer.cornerRadius = 12
-            if let action = action { b.addTarget(self, action: action, for: .touchUpInside) }
-            b.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+            if let action { b.addTarget(self, action: action, for: .touchUpInside) }
             return b
         }
-
-        let exit = button("xmark", "Close video", #selector(closeTapped))
-        let expand = button("arrow.up.left.and.arrow.down.right", "Return to fullscreen", #selector(toggleTabletop))
-        let headerTitle = UILabel()
-        headerTitle.text = titleText
-        headerTitle.textColor = .white
-        headerTitle.font = .systemFont(ofSize: 15, weight: .semibold)
-        headerTitle.lineBreakMode = .byTruncatingTail
-        headerTitle.numberOfLines = 1
-        headerTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        tableAudioButton.setImage(symbol("waveform", 21), for: .normal)
-        tableAudioButton.accessibilityLabel = "Audio tracks"
-        tableAudioButton.tintColor = .white
-        tableAudioButton.showsMenuAsPrimaryAction = true
-        tableAudioButton.backgroundColor = UIColor.white.withAlphaComponent(0.075)
-        tableAudioButton.layer.cornerRadius = 12
-        tableSubtitleButton.setImage(symbol("captions.bubble", 21), for: .normal)
-        tableSubtitleButton.accessibilityLabel = "Subtitles"
-        tableSubtitleButton.tintColor = .white
-        tableSubtitleButton.showsMenuAsPrimaryAction = true
-        tableSubtitleButton.backgroundColor = UIColor.white.withAlphaComponent(0.075)
-        tableSubtitleButton.layer.cornerRadius = 12
-        for b in [exit, tableAudioButton, tableSubtitleButton, expand] {
-            b.widthAnchor.constraint(equalToConstant: 44).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        func configureTile(_ b: UIButton, _ label: String) {
+            b.tintColor = .white
+            b.backgroundColor = tileColor
+            b.layer.cornerRadius = 4
+            b.layer.borderWidth = 0.6
+            b.layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
+            b.accessibilityLabel = label
         }
-        let header = UIStackView(arrangedSubviews: [exit, headerTitle, tableAudioButton, tableSubtitleButton, expand])
-        header.axis = .horizontal
-        header.spacing = 7
-        header.alignment = .center
-        header.heightAnchor.constraint(equalToConstant: 46).isActive = true
+        func row(_ views: [UIView], _ height: CGFloat) -> UIStackView {
+            let stack = UIStackView(arrangedSubviews: views)
+            stack.axis = .horizontal
+            stack.spacing = 3
+            stack.distribution = .fillEqually
+            stack.heightAnchor.constraint(equalToConstant: height).isActive = true
+            return stack
+        }
 
+        let close = tile("xmark", "Close video", #selector(closeTapped))
+        let back = tile("gobackward.10", "Back 10 seconds", #selector(backTapped))
+        let forward = tile("goforward.10", "Forward 10 seconds", #selector(forwardTapped))
+        configureTile(tablePlay, "Play or pause")
+        tablePlay.setImage(symbol("pause.fill", 29), for: .normal)
+        tablePlay.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
+        configureTile(tableAudioButton, "Audio tracks")
+        tableAudioButton.setImage(symbol("waveform", 20), for: .normal)
+        tableAudioButton.showsMenuAsPrimaryAction = true
+        configureTile(tableSubtitleButton, "Subtitles")
+        tableSubtitleButton.setImage(symbol("captions.bubble", 20), for: .normal)
+        tableSubtitleButton.showsMenuAsPrimaryAction = true
+        configureTile(tableSpeedButton, "Playback speed")
+        tableSpeedButton.setTitle("1×", for: .normal)
+        tableSpeedButton.setTitleColor(.white, for: .normal)
+        tableSpeedButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        tableSpeedButton.addTarget(self, action: #selector(speedTapped), for: .touchUpInside)
+        configureTile(tableFitButton, "Fit or fill video")
+        tableFitButton.setImage(symbol("arrow.up.left.and.arrow.down.right", 20), for: .normal)
+        tableFitButton.addTarget(self, action: #selector(fitTapped), for: .touchUpInside)
+
+        let header = UIView()
+        header.backgroundColor = UIColor(red: 0.13, green: 0.15, blue: 0.19, alpha: 1)
+        header.heightAnchor.constraint(equalToConstant: 34).isActive = true
         let brand = UILabel()
         brand.text = "ATRIUM"
-        brand.textColor = UIColor(red: 0.94, green: 0.12, blue: 0.17, alpha: 1)
-        brand.font = .systemFont(ofSize: 11, weight: .heavy)
-        brand.textAlignment = .center
-        brand.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        brand.textColor = UIColor(red: 0.94, green: 0.14, blue: 0.20, alpha: 1)
+        brand.font = .systemFont(ofSize: 10, weight: .heavy)
+        let name = UILabel()
+        name.text = titleText
+        name.textColor = UIColor.white.withAlphaComponent(0.88)
+        name.font = .systemFont(ofSize: 12, weight: .medium)
+        name.lineBreakMode = .byTruncatingTail
+        let headerRow = UIStackView(arrangedSubviews: [brand, name])
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+        headerRow.axis = .horizontal
+        headerRow.spacing = 10
+        headerRow.alignment = .center
+        header.addSubview(headerRow)
+        NSLayoutConstraint.activate([
+            brand.widthAnchor.constraint(equalToConstant: 48),
+            headerRow.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 10),
+            headerRow.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -10),
+            headerRow.centerYAnchor.constraint(equalTo: header.centerYAnchor)
+        ])
 
-        let rewind = button("gobackward.10", "Back 10 seconds", #selector(backTapped))
-        let advance = button("goforward.10", "Forward 10 seconds", #selector(forwardTapped))
-        for b in [rewind, advance] {
-            b.widthAnchor.constraint(equalToConstant: 65).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 54).isActive = true
-        }
-        tablePlay.setImage(symbol("pause.fill", 29), for: .normal)
-        tablePlay.tintColor = .white
-        tablePlay.backgroundColor = UIColor.white.withAlphaComponent(0.16)
-        tablePlay.layer.cornerRadius = 15
-        tablePlay.accessibilityLabel = "Pause or resume"
-        tablePlay.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
-        tablePlay.widthAnchor.constraint(equalToConstant: 82).isActive = true
-        tablePlay.heightAnchor.constraint(equalToConstant: 56).isActive = true
-        let transport = UIStackView(arrangedSubviews: [rewind, tablePlay, advance])
-        transport.axis = .horizontal
-        transport.alignment = .center
-        transport.distribution = .equalCentering
-        transport.spacing = 20
-        transport.heightAnchor.constraint(equalToConstant: 57).isActive = true
+        // Match the reference: large central transport tile, compact adjacent controls.
+        let first = row([close, tableAudioButton, tablePlay, tableSubtitleButton, tableSpeedButton], 58)
+        let second = row([back, tableFitButton, forward], 48)
 
         tableProgress.minimumValue = 0
         tableProgress.maximumValue = 1
-        tableProgress.minimumTrackTintColor = UIColor(red: 0.95, green: 0.12, blue: 0.20, alpha: 1)
-        tableProgress.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.28)
+        tableProgress.minimumTrackTintColor = UIColor(red: 0.94, green: 0.15, blue: 0.20, alpha: 1)
+        tableProgress.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.22)
         tableProgress.accessibilityLabel = "Playback progress"
         tableProgress.addTarget(self, action: #selector(tableScrubStarted), for: .touchDown)
         tableProgress.addTarget(self, action: #selector(tableScrubMoved), for: .valueChanged)
         tableProgress.addTarget(self, action: #selector(tableScrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         for label in [tableElapsed, tableRemaining] {
-            label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-            label.textColor = .white.withAlphaComponent(0.9)
+            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            label.textColor = UIColor.white.withAlphaComponent(0.8)
             label.text = "0:00"
         }
         tableRemaining.textAlignment = .right
-        tableElapsed.widthAnchor.constraint(equalToConstant: 47).isActive = true
-        tableRemaining.widthAnchor.constraint(equalToConstant: 51).isActive = true
-        let timeline = UIStackView(arrangedSubviews: [tableElapsed, tableProgress, tableRemaining])
-        timeline.axis = .horizontal
-        timeline.spacing = 9
-        timeline.alignment = .center
-        timeline.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        tableElapsed.widthAnchor.constraint(equalToConstant: 45).isActive = true
+        tableRemaining.widthAnchor.constraint(equalToConstant: 50).isActive = true
+        let progressRow = UIStackView(arrangedSubviews: [tableElapsed, tableProgress, tableRemaining])
+        progressRow.axis = .horizontal
+        progressRow.spacing = 8
+        progressRow.alignment = .center
+        progressRow.heightAnchor.constraint(equalToConstant: 29).isActive = true
 
-        // Actual on-screen controls, not buttons that merely show instructions.
-        // MPVolumeView sends volume changes through iOS' authorized system UI.
-        let volumeIcon = UIImageView(image: symbol("speaker.wave.2", 17))
-        volumeIcon.tintColor = .white
-        volumeIcon.contentMode = .scaleAspectFit
-        volumeIcon.widthAnchor.constraint(equalToConstant: 22).isActive = true
-        tableVolume.showsVolumeSlider = true
-        tableVolume.showsRouteButton = false
-        tableVolume.tintColor = .white
-        tableVolume.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        tableVolume.accessibilityLabel = "System volume"
-        let volRow = UIStackView(arrangedSubviews: [volumeIcon, tableVolume])
-        volRow.axis = .horizontal
-        volRow.spacing = 10
-        volRow.alignment = .center
-        let volBox = UIView()
-        volRow.translatesAutoresizingMaskIntoConstraints = false
-        volBox.addSubview(volRow)
-        NSLayoutConstraint.activate([
-            volRow.leadingAnchor.constraint(equalTo: volBox.leadingAnchor, constant: 10),
-            volRow.trailingAnchor.constraint(equalTo: volBox.trailingAnchor, constant: -10),
-            volRow.topAnchor.constraint(equalTo: volBox.topAnchor),
-            volRow.bottomAnchor.constraint(equalTo: volBox.bottomAnchor)
-        ])
-
-        let lightIcon = UIImageView(image: symbol("sun.max", 18))
-        lightIcon.tintColor = .white
-        lightIcon.contentMode = .scaleAspectFit
-        lightIcon.widthAnchor.constraint(equalToConstant: 22).isActive = true
         tableBrightness.minimumValue = 0.05
         tableBrightness.maximumValue = 1
-        tableBrightness.value = Float(view.window?.screen.brightness ?? UIScreen.main.brightness)
+        tableBrightness.value = Float(UIScreen.main.brightness)
         tableBrightness.minimumTrackTintColor = .white
         tableBrightness.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
         tableBrightness.accessibilityLabel = "Screen brightness"
         tableBrightness.addTarget(self, action: #selector(tableBrightnessChanged), for: .valueChanged)
-        let brightRow = UIStackView(arrangedSubviews: [lightIcon, tableBrightness])
-        brightRow.axis = .horizontal
-        brightRow.spacing = 10
-        brightRow.alignment = .center
-        let brightBox = UIView()
-        brightRow.translatesAutoresizingMaskIntoConstraints = false
-        brightBox.addSubview(brightRow)
-        NSLayoutConstraint.activate([
-            brightRow.leadingAnchor.constraint(equalTo: brightBox.leadingAnchor, constant: 10),
-            brightRow.trailingAnchor.constraint(equalTo: brightBox.trailingAnchor, constant: -10),
-            brightRow.topAnchor.constraint(equalTo: brightBox.topAnchor),
-            brightRow.bottomAnchor.constraint(equalTo: brightBox.bottomAnchor)
-        ])
-
-        let levels = UIStackView(arrangedSubviews: [brightBox, volBox])
-        levels.axis = .horizontal
-        levels.distribution = .fillEqually
-        levels.spacing = 10
-        levels.heightAnchor.constraint(equalToConstant: 42).isActive = true
-
-        tableSpeedButton.setTitle("1×", for: .normal)
-        tableSpeedButton.setTitleColor(.white, for: .normal)
-        tableSpeedButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-        tableSpeedButton.backgroundColor = UIColor.white.withAlphaComponent(0.09)
-        tableSpeedButton.layer.cornerRadius = 12
-        tableSpeedButton.accessibilityLabel = "Playback speed"
-        tableSpeedButton.addTarget(self, action: #selector(speedTapped), for: .touchUpInside)
-        tableFitButton.setImage(symbol("arrow.up.left.and.arrow.down.right", 20), for: .normal)
-        tableFitButton.tintColor = .white
-        tableFitButton.backgroundColor = UIColor.white.withAlphaComponent(0.09)
-        tableFitButton.layer.cornerRadius = 12
-        tableFitButton.accessibilityLabel = "Fit or fill video"
-        tableFitButton.addTarget(self, action: #selector(fitTapped), for: .touchUpInside)
-        let tools = UIStackView(arrangedSubviews: [tableSpeedButton, tableFitButton])
-        tools.axis = .horizontal
-        tools.distribution = .fillEqually
-        tools.spacing = 12
-        tools.heightAnchor.constraint(equalToConstant: 42).isActive = true
-
-        let stack = UIStackView(arrangedSubviews: [header, brand, transport, timeline, levels, tools])
+        tableVolume.showsVolumeSlider = true
+        tableVolume.showsRouteButton = false
+        tableVolume.tintColor = .white
+        tableVolume.accessibilityLabel = "System volume"
+        func sliderTile(_ icon: String, _ control: UIView) -> UIView {
+            let box = UIView()
+            box.backgroundColor = tileColor
+            box.layer.cornerRadius = 4
+            let symbolView = UIImageView(image: symbol(icon, 17))
+            symbolView.tintColor = .white
+            symbolView.contentMode = .scaleAspectFit
+            symbolView.translatesAutoresizingMaskIntoConstraints = false
+            control.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(symbolView)
+            box.addSubview(control)
+            NSLayoutConstraint.activate([
+                symbolView.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 10),
+                symbolView.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+                symbolView.widthAnchor.constraint(equalToConstant: 22),
+                control.leadingAnchor.constraint(equalTo: symbolView.trailingAnchor, constant: 7),
+                control.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+                control.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+                control.heightAnchor.constraint(equalToConstant: 36)
+            ])
+            return box
+        }
+        let levels = row([sliderTile("sun.max", tableBrightness), sliderTile("speaker.wave.2", tableVolume)], 46)
+        let stack = UIStackView(arrangedSubviews: [header, first, second, progressRow, levels])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = 7
+        stack.spacing = 3
         scroll.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 7),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 3),
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
-            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -32)
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 5),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -5),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -10)
         ])
-
-        // Only activate these anchors after entering tabletop mode. Fullscreen's
-        // video-bottom constraint must not compete with the panel's intrinsic height.
         tablePanelTopConstraint = tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor)
         tablePanelBottomConstraint = tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([
