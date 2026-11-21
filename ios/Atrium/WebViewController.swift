@@ -121,6 +121,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     @objc private func showWidgetDiagnostics(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
+        let groupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.app.atrium.widgets")
         let defaults = UserDefaults(suiteName: "group.app.atrium.widgets")
         let probeKey = "atrium.widget.diagnostic.probe"
         let probe = UUID().uuidString
@@ -141,7 +142,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         Dernière collecte :
         \(received)
 
-        App Groups accessible : \(defaults != nil ? "oui" : "non")
+        Conteneur App Group : \(groupContainer != nil ? "accessible" : "INACCESSIBLE")
+        UserDefaults suite : \(defaults != nil ? "accessible" : "inaccessible")
         Test écriture/lecture : \(roundTrip ? "réussi" : "échoué")
         Dernier enregistrement : \(widgetLastSaveSucceeded ? "réussi" : "non confirmé")
         Données relues :
