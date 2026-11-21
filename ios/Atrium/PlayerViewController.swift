@@ -373,7 +373,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     }
 
     @objc private func tabletopTouchUp(_ sender: UIButton) {
-        UIView.animate(withDuration: 0.20, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        // Let short taps remain visible before the tile gently fades back.
+        UIView.animate(withDuration: 0.28, delay: 0.18, options: [.beginFromCurrentState, .allowUserInteraction]) {
             sender.backgroundColor = sender === self.tablePlay
                 ? UIColor(red: 0.21, green: 0.24, blue: 0.31, alpha: 1)
                 : UIColor(red: 0.15, green: 0.17, blue: 0.22, alpha: 1)
