@@ -369,7 +369,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     @objc private func tabletopTouchDown(_ sender: UIButton) {
         // A subtle physical confirmation, synchronized with the visual press.
         tabletopHaptic.prepare()
-        tabletopHaptic.impactOccurred(intensity: 0.65)
+        tabletopHaptic.impactOccurred(intensity: 0.85)
         UIView.animate(withDuration: 0.10, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
             sender.backgroundColor = UIColor(red: 0.32, green: 0.40, blue: 0.54, alpha: 1)
             sender.layer.borderColor = UIColor.white.withAlphaComponent(0.48).cgColor
