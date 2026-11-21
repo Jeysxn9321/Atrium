@@ -4,6 +4,9 @@ on:
   push:
     branches: [ios-app]
     paths: ['ios/**', '.github/workflows/ios.yml']
+concurrency:
+  group: atrium-ios-release
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
