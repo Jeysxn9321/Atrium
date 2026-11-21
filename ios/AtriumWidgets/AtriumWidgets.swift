@@ -38,7 +38,7 @@ struct AtriumProvider: TimelineProvider {
     }
 }
 
-private enum AtriumKind: String, CaseIterable {
+enum AtriumKind: String, CaseIterable {
     case continueWatching = "atrium.continue"
     case discover = "atrium.discover"
     case library = "atrium.library"
