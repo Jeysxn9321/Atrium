@@ -628,7 +628,12 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             videoBottomConstraint.isActive = true
         }
         tabletopMode = enable
-        tablePanel.isHidden = !enable
+        // Keep the panel in the hierarchy during the fold animation to avoid a
+        // one-frame flash or jump when switching between player layouts.
+        if enable {
+            tablePanel.alpha = 0
+            tablePanel.isHidden = false
+        }
         tableModeButton.isHidden = hingeIsAvailable || enable
         if enable {
             tableBrightness.value = Float(view.window?.screen.brightness ?? UIScreen.main.brightness)
@@ -637,11 +642,18 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         controls.alpha = enable ? 0 : 1
         controls.isUserInteractionEnabled = !enable
         fill = !enable
+        // Apply the intended video crop immediately, rather than after the
+        // animation, so playback does not visibly snap at the end.
+        applyFill(force: true)
         view.setNeedsLayout()
         UIView.animate(withDuration: 0.26, delay: 0, options: [.beginFromCurrentState, .curveEaseInOut, .allowUserInteraction]) {
+            self.tablePanel.alpha = enable ? 1 : 0
             self.view.layoutIfNeeded()
         } completion: { [weak self] _ in
-            self?.applyFill(force: true)
+            guard let self else { return }
+            self.tablePanel.isHidden = !self.tabletopMode
+            self.tablePanel.alpha = self.tabletopMode ? 1 : 0
+            self.applyFill(force: true)
         }
         if !enable { showControls() }
     }
