@@ -44,14 +44,16 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             function cards(row, max) {
               if (!row) return [];
               return Array.from(row.querySelectorAll('.card')).slice(0,max).map(function(card, i) {
-                var title = (card.querySelector('.cap b') || card.querySelector('.fallback'));
+                var titleNode = card.querySelector('.cap b') || card.querySelector('.fallback');
+                var image = card.querySelector('img:not(.tl)');
+                var title = (titleNode && titleNode.textContent || image && image.alt || '').trim().slice(0,120);
                 var subtitle = card.querySelector('.cap span');
                 var progress = card.querySelector('.bar i');
                 var value = progress ? parseFloat(progress.style.width) / 100 : null;
-                return {id: String(i) + ':' + (title ? title.textContent : ''),
-                  title: title ? title.textContent.trim().slice(0,120) : '',
+                return {id: String(i) + ':' + title,
+                  title: title,
                   subtitle: subtitle ? subtitle.textContent.trim().slice(0,100) : '',
-                  progress: isFinite(value) ? value : null,
+                  progress: value !== null && isFinite(value) ? value : null,
                   url: 'atrium://home'};
               }).filter(function(x) { return x.title; });
             }
@@ -72,12 +74,13 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
           var pending;
           var observer = new MutationObserver(function() {
             clearTimeout(pending);
-            pending = setTimeout(collect, 1500);
+            pending = setTimeout(collect, 500);
           });
           function start() {
             if (!document.body) return;
             observer.observe(document.body, {childList:true,subtree:true});
             setTimeout(collect, 3000);
+            setInterval(collect, 15000);
           }
           if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
           else start();
