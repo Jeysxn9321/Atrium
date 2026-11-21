@@ -412,7 +412,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             stack.axis = .horizontal
             stack.spacing = 3
             stack.distribution = .fillEqually
-            stack.heightAnchor.constraint(equalToConstant: height).isActive = true
+            stack.heightAnchor.constraint(greaterThanOrEqualToConstant: height).isActive = true
             return stack
         }
 
@@ -439,7 +439,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
 
         let header = UIView()
         header.backgroundColor = UIColor(red: 0.13, green: 0.15, blue: 0.19, alpha: 1)
-        header.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        header.heightAnchor.constraint(greaterThanOrEqualToConstant: 34).isActive = true
         let brand = UILabel()
         brand.text = "ATRIUM"
         brand.textColor = UIColor(red: 0.94, green: 0.14, blue: 0.20, alpha: 1)
@@ -486,7 +486,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         progressRow.axis = .horizontal
         progressRow.spacing = 8
         progressRow.alignment = .center
-        progressRow.heightAnchor.constraint(equalToConstant: 29).isActive = true
+        progressRow.heightAnchor.constraint(greaterThanOrEqualToConstant: 29).isActive = true
 
         tableBrightness.minimumValue = 0.05
         tableBrightness.maximumValue = 1
@@ -534,6 +534,29 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -5),
             stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -10)
         ])
+        // Fill the full lower half instead of leaving a large unused area.
+        // Proportional heights adapt to the Duo's actual fold/window size;
+        // minimum touch heights remain enforced for compact windows.
+        for (section, fraction) in [(header, CGFloat(0.09)),
+                                    (first, CGFloat(0.29)),
+                                    (second, CGFloat(0.24)),
+                                    (progressRow, CGFloat(0.11)),
+                                    (levels, CGFloat(0.23))] {
+            let proportional = section.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor, multiplier: fraction)
+            proportional.priority = UILayoutPriority(750)
+            proportional.isActive = true
+        }
+        // Smaller thumb for the seek bar; keep the full slider touch area.
+        let thumbSize = CGSize(width: 14, height: 14)
+        let thumb = UIGraphicsImageRenderer(size: thumbSize).image { context in
+            UIColor.white.setFill()
+            context.fillEllipse(in: CGRect(origin: .zero, size: thumbSize))
+        }
+        tableProgress.setThumbImage(thumb, for: .normal)
+        tableProgress.setThumbImage(thumb, for: .highlighted)
+        tableBrightness.setThumbImage(thumb, for: .normal)
+        tableBrightness.setThumbImage(thumb, for: .highlighted)
+
         tablePanelTopConstraint = tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor)
         tablePanelBottomConstraint = tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([
