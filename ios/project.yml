@@ -53,11 +53,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.atrium.iphone
         PRODUCT_NAME: Atrium
         TARGETED_DEVICE_FAMILY: "1,2"
-    dependencies:
-      - target: AtriumWidgets
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: Atrium/Info.plist
         CODE_SIGN_ENTITLEMENTS: Atrium/Atrium.entitlements
+    dependencies:
+      - target: AtriumWidgets
 
   AtriumWidgets:
     type: app-extension
