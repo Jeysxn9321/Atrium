@@ -116,8 +116,17 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                JSONSerialization.isValidJSONObject(snapshot),
                let data = try? JSONSerialization.data(withJSONObject: snapshot),
                data.count < 200_000 {
-                UserDefaults(suiteName: "group.app.atrium.widgets")?.set(data, forKey: "snapshot")
-                WidgetCenter.shared.reloadAllTimelines()
+                let store = UserDefaults(suiteName: "group.app.atrium.widgets")
+                var merged = snapshot
+                if let previous = store?.data(forKey: "snapshot"),
+                   let old = (try? JSONSerialization.jsonObject(with: previous)) as? [String: Any],
+                   let now = old["nowPlaying"] {
+                    merged["nowPlaying"] = now
+                }
+                if let updated = try? JSONSerialization.data(withJSONObject: merged) {
+                    store?.set(updated, forKey: "snapshot")
+                    WidgetCenter.shared.reloadAllTimelines()
+                }
             }
         case "play":
             guard player == nil, let s = body["url"] as? String, let url = URL(string: s), url.scheme == "https" else { return }
