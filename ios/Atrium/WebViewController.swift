@@ -1,6 +1,7 @@
 import UIKit
 import WebKit
 import AVFoundation
+import WidgetKit
 
 /// The Atrium page, full screen. The page is the one hosted on GitHub, so every update to it arrives by itself.
 /// What the page cannot do, this app does: play a video with VLC's engine (any format, any sound track), and
@@ -59,16 +60,44 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == WebViewController.host else { return }
         guard let body = message.body as? [String: Any], let cmd = body["cmd"] as? String else { return }
         switch cmd {
+        case "widgets":
+            if let snapshot = body["snapshot"] as? [String: Any],
+               JSONSerialization.isValidJSONObject(snapshot),
+               let data = try? JSONSerialization.data(withJSONObject: snapshot),
+               data.count < 200_000 {
+                UserDefaults(suiteName: "group.app.atrium.widgets")?.set(data, forKey: "snapshot")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         case "play":
             guard player == nil, let s = body["url"] as? String, let url = URL(string: s), url.scheme == "https" else { return }
             let title = (body["title"] as? String) ?? ""
             let start = (body["start"] as? Double) ?? 0
             let lang = (body["lang"] as? String) ?? "eng"
+            let store = UserDefaults(suiteName: "group.app.atrium.widgets")
+            var snapshot = store?.data(forKey: "snapshot").flatMap {
+                (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+            } ?? [:]
+            snapshot["nowPlaying"] = ["id": url.absoluteString, "title": title, "subtitle": "Playing in Atrium"]
+            if let data = try? JSONSerialization.data(withJSONObject: snapshot) {
+                store?.set(data, forKey: "snapshot")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             let p = PlayerViewController(url: url, title: title, start: start, audioLanguage: lang)
             p.onProgress = { [weak self] pos, dur, ended in
                 self?.tell("progress", ["pos": pos, "dur": dur, "ended": ended])
             }
-            p.onClose = { [weak self] in self?.tell("closed", [:]) }
+            p.onClose = { [weak self] in
+                self?.tell("closed", [:])
+                if let store = UserDefaults(suiteName: "group.app.atrium.widgets"),
+                   let data = store.data(forKey: "snapshot"),
+                   var snapshot = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                    snapshot.removeValue(forKey: "nowPlaying")
+                    if let updated = try? JSONSerialization.data(withJSONObject: snapshot) {
+                        store.set(updated, forKey: "snapshot")
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                }
+            }
             p.modalPresentationStyle = .fullScreen
             player = p
             web.pauseAllMediaPlayback { }
