@@ -516,7 +516,9 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
                 symbolView.widthAnchor.constraint(equalToConstant: 22),
                 control.leadingAnchor.constraint(equalTo: symbolView.trailingAnchor, constant: 7),
                 control.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
-                control.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+                // MPVolumeView positions its internal slider above its own center.
+                // Compensate so volume and brightness tracks share one baseline.
+                control.centerYAnchor.constraint(equalTo: box.centerYAnchor, constant: control is MPVolumeView ? 5 : 0),
                 control.heightAnchor.constraint(equalToConstant: 36)
             ])
             return box
