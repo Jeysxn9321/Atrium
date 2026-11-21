@@ -141,6 +141,8 @@ struct AtriumWidgetView: View {
 
 struct AtriumWidget: Widget {
     let kind: AtriumKind
+    init() { kind = .continueWatching }
+    init(kind: AtriumKind) { self.kind = kind }
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind.rawValue, provider: AtriumProvider()) { entry in
             AtriumWidgetView(entry: entry, kind: kind)
