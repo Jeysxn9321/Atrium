@@ -50,5 +50,29 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.atrium.iphone
         PRODUCT_NAME: Atrium
         TARGETED_DEVICE_FAMILY: "1,2"
+    dependencies:
+      - target: AtriumWidgets
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: Atrium/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Atrium/Atrium.entitlements
+
+  AtriumWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - AtriumWidgets
+    info:
+      path: AtriumWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Atrium Widgets
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.atrium.iphone.widgets
+        PRODUCT_NAME: AtriumWidgets
+        INFOPLIST_FILE: AtriumWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AtriumWidgets/AtriumWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
