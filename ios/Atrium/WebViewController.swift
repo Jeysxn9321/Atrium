@@ -13,6 +13,9 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     static let okSchemes: Set<String> = ["https", "http", "vlc-x-callback", "infuse", "shareddocuments"]
     private var web: WKWebView!
     private weak var player: PlayerViewController?
+    private var widgetMessagesReceived = 0
+    private var widgetLastCounts = [String: Int]()
+    private var widgetLastSaveSucceeded = false
     private var startupAudioPlayed = false
     private var startupAudioEngine: AVAudioEngine?
     private var startupAudioNode: AVAudioPlayerNode?
@@ -99,6 +102,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         web.allowsBackForwardNavigationGestures = false
         if #available(iOS 16.4, *) { web.isInspectable = true }
         view.addSubview(web)
+        let widgetDiagnosticGesture = UILongPressGestureRecognizer(target: self, action: #selector(showWidgetDiagnostics(_:)))
+        widgetDiagnosticGesture.numberOfTouchesRequired = 2
+        widgetDiagnosticGesture.minimumPressDuration = 1.5
+        widgetDiagnosticGesture.cancelsTouchesInView = false
+        web.addGestureRecognizer(widgetDiagnosticGesture)
         NSLayoutConstraint.activate([
             web.topAnchor.constraint(equalTo: view.topAnchor),
             web.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -111,16 +119,55 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     // MARK: messages from the page
 
+    @objc private func showWidgetDiagnostics(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let defaults = UserDefaults(suiteName: "group.app.atrium.widgets")
+        let probeKey = "atrium.widget.diagnostic.probe"
+        let probe = UUID().uuidString
+        defaults?.set(probe, forKey: probeKey)
+        let roundTrip = defaults?.string(forKey: probeKey) == probe
+        defaults?.removeObject(forKey: probeKey)
+        let saved = defaults?.data(forKey: "snapshot")
+        let decoded = saved.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+        let keys = ["continueWatching", "discover", "library"]
+        let counts = keys.map { key in
+            "\(key): \((decoded?[key] as? [Any])?.count ?? 0)"
+        }.joined(separator: "\\n")
+        let received = keys.map { key in
+            "\(key): \(widgetLastCounts[key] ?? 0)"
+        }.joined(separator: "\\n")
+        let message = """
+        Messages Web reçus : \(widgetMessagesReceived)
+        Dernière collecte :
+        \(received)
+
+        App Groups accessible : \(defaults != nil ? "oui" : "non")
+        Test écriture/lecture : \(roundTrip ? "réussi" : "échoué")
+        Dernier enregistrement : \(widgetLastSaveSucceeded ? "réussi" : "non confirmé")
+        Données relues :
+        \(counts)
+
+        Ce diagnostic vérifie le côté application, pas la lecture par l'extension WidgetKit.
+        """
+        let alert = UIAlertController(title: "Diagnostic des widgets Atrium", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Fermer", style: .default))
+        present(alert, animated: true)
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         // only the Atrium page itself may ask for things, not a frame inside it (a trailer, an ad)
         guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == WebViewController.host else { return }
         guard let body = message.body as? [String: Any], let cmd = body["cmd"] as? String else { return }
         switch cmd {
         case "widgets":
+            widgetMessagesReceived += 1
             if let snapshot = body["snapshot"] as? [String: Any],
                JSONSerialization.isValidJSONObject(snapshot),
                let data = try? JSONSerialization.data(withJSONObject: snapshot),
                data.count < 200_000 {
+                widgetLastCounts = ["continueWatching", "discover", "library"].reduce(into: [String: Int]()) { result, key in
+                    result[key] = (snapshot[key] as? [Any])?.count ?? 0
+                }
                 let store = UserDefaults(suiteName: "group.app.atrium.widgets")
                 var merged = snapshot
                 if let previous = store?.data(forKey: "snapshot"),
@@ -137,6 +184,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 }
                 if let updated = try? JSONSerialization.data(withJSONObject: merged) {
                     store?.set(updated, forKey: "snapshot")
+                    widgetLastSaveSucceeded = store?.data(forKey: "snapshot") == updated
                     WidgetCenter.shared.reloadAllTimelines()
                 }
             }
