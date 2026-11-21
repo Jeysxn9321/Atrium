@@ -550,7 +550,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         let thumbSize = CGSize(width: 14, height: 14)
         let thumb = UIGraphicsImageRenderer(size: thumbSize).image { context in
             UIColor.white.setFill()
-            context.fillEllipse(in: CGRect(origin: .zero, size: thumbSize))
+            context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: thumbSize))
         }
         tableProgress.setThumbImage(thumb, for: .normal)
         tableProgress.setThumbImage(thumb, for: .highlighted)
