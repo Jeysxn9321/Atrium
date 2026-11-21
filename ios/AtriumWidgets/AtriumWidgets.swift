@@ -32,11 +32,14 @@ struct AtriumProvider: TimelineProvider {
         completion(Timeline(entries: [load()], policy: .after(Date().addingTimeInterval(1800))))
     }
     private func load() -> AtriumEntry {
+        let groupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID)
         let defaults = UserDefaults(suiteName: groupID)
         let data = defaults?.data(forKey: "snapshot")
         let snapshot = data.flatMap { try? JSONDecoder().decode(AtriumSnapshot.self, from: $0) } ?? AtriumSnapshot()
         let diagnostic: String
-        if defaults == nil {
+        if groupContainer == nil {
+            diagnostic = "GROUP ENTITLEMENT MISSING"
+        } else if defaults == nil {
             diagnostic = "GROUP UNAVAILABLE"
         } else if data == nil {
             diagnostic = "NO SHARED DATA"
