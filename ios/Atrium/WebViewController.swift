@@ -40,6 +40,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
           function collect() {
             if (location.hostname !== 'jeysxn9321.github.io') return;
             var rows = Array.from(document.querySelectorAll('#rows .row'));
+            if (!rows.length) return;
             function cards(row, max) {
               if (!row) return [];
               return Array.from(row.querySelectorAll('.card')).slice(0,max).map(function(card, i) {
@@ -57,7 +58,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             function byTitle(name) {
               return rows.find(function(row) {
                 var heading = row.querySelector('h2,h3,.rowtitle,.row-title');
-                return heading && heading.textContent.trim().toLowerCase() === name;
+                return heading && heading.textContent.trim().toLowerCase().startsWith(name);
               });
             }
             var snapshot = {
@@ -65,6 +66,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
               discover: cards(byTitle('popular movies') || byTitle('trending') || rows.find(function(r){return r.id !== 'contRow';}), 8),
               library: cards(byTitle('my list'), 8)
             };
+            if (!snapshot.continueWatching.length && !snapshot.discover.length && !snapshot.library.length) return;
             try { window.webkit.messageHandlers.atrium.postMessage({cmd:'widgets', snapshot:snapshot}); } catch(e) {}
           }
           var pending;
@@ -119,9 +121,16 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 let store = UserDefaults(suiteName: "group.app.atrium.widgets")
                 var merged = snapshot
                 if let previous = store?.data(forKey: "snapshot"),
-                   let old = (try? JSONSerialization.jsonObject(with: previous)) as? [String: Any],
-                   let now = old["nowPlaying"] {
-                    merged["nowPlaying"] = now
+                   let old = (try? JSONSerialization.jsonObject(with: previous)) as? [String: Any] {
+                    if let now = old["nowPlaying"] { merged["nowPlaying"] = now }
+                    // The web catalogue loads asynchronously and tabs replace its rows.
+                    // Never erase a previously populated collection with a transient empty row.
+                    for key in ["continueWatching", "discover", "library"] {
+                        if let incoming = merged[key] as? [Any], incoming.isEmpty,
+                           let previousItems = old[key] as? [Any], !previousItems.isEmpty {
+                            merged[key] = previousItems
+                        }
+                    }
                 }
                 if let updated = try? JSONSerialization.data(withJSONObject: merged) {
                     store?.set(updated, forKey: "snapshot")
