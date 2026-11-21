@@ -31,6 +31,57 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         config.mediaTypesRequiringUserActionForPlayback = []
         config.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1 AtriumApp/1"
         config.userContentController.add(WeakHandler(self), name: "atrium")
+        // Read only visible catalogue titles from the trusted Atrium page.
+        // No credentials, account tokens, or playback URLs are sent to widgets.
+        let widgetSync = """
+        (function() {
+          if (window.__atriumWidgetSync) return;
+          window.__atriumWidgetSync = true;
+          function collect() {
+            if (location.hostname !== 'jeysxn9321.github.io') return;
+            var rows = Array.from(document.querySelectorAll('#rows .row'));
+            function cards(row, max) {
+              if (!row) return [];
+              return Array.from(row.querySelectorAll('.card')).slice(0,max).map(function(card, i) {
+                var title = (card.querySelector('.cap b') || card.querySelector('.fallback'));
+                var subtitle = card.querySelector('.cap span');
+                var progress = card.querySelector('.bar i');
+                var value = progress ? parseFloat(progress.style.width) / 100 : null;
+                return {id: String(i) + ':' + (title ? title.textContent : ''),
+                  title: title ? title.textContent.trim().slice(0,120) : '',
+                  subtitle: subtitle ? subtitle.textContent.trim().slice(0,100) : '',
+                  progress: isFinite(value) ? value : null,
+                  url: 'atrium://home'};
+              }).filter(function(x) { return x.title; });
+            }
+            function byTitle(name) {
+              return rows.find(function(row) {
+                var heading = row.querySelector('h2,h3,.rowtitle,.row-title');
+                return heading && heading.textContent.trim().toLowerCase() === name;
+              });
+            }
+            var snapshot = {
+              continueWatching: cards(document.getElementById('contRow') || byTitle('continue watching'), 8),
+              discover: cards(byTitle('popular movies') || byTitle('trending') || rows.find(function(r){return r.id !== 'contRow';}), 8),
+              library: cards(byTitle('my list'), 8)
+            };
+            try { window.webkit.messageHandlers.atrium.postMessage({cmd:'widgets', snapshot:snapshot}); } catch(e) {}
+          }
+          var pending;
+          var observer = new MutationObserver(function() {
+            clearTimeout(pending);
+            pending = setTimeout(collect, 1500);
+          });
+          function start() {
+            if (!document.body) return;
+            observer.observe(document.body, {childList:true,subtree:true});
+            setTimeout(collect, 3000);
+          }
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+          else start();
+        })();
+        """
+        config.userContentController.addUserScript(WKUserScript(source: widgetSync, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
 
         web = WKWebView(frame: .zero, configuration: config)
         web.translatesAutoresizingMaskIntoConstraints = false
