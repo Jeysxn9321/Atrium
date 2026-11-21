@@ -22,10 +22,11 @@ struct AtriumSnapshot: Codable {
 struct AtriumEntry: TimelineEntry {
     let date: Date
     let data: AtriumSnapshot
+    let diagnostic: String
 }
 
 struct AtriumProvider: TimelineProvider {
-    func placeholder(in context: Context) -> AtriumEntry { AtriumEntry(date: .now, data: AtriumSnapshot()) }
+    func placeholder(in context: Context) -> AtriumEntry { AtriumEntry(date: .now, data: AtriumSnapshot(), diagnostic: "PREVIEW") }
     func getSnapshot(in context: Context, completion: @escaping (AtriumEntry) -> Void) { completion(load()) }
     func getTimeline(in context: Context, completion: @escaping (Timeline<AtriumEntry>) -> Void) {
         completion(Timeline(entries: [load()], policy: .after(Date().addingTimeInterval(1800))))
@@ -34,7 +35,17 @@ struct AtriumProvider: TimelineProvider {
         let defaults = UserDefaults(suiteName: groupID)
         let data = defaults?.data(forKey: "snapshot")
         let snapshot = data.flatMap { try? JSONDecoder().decode(AtriumSnapshot.self, from: $0) } ?? AtriumSnapshot()
-        return AtriumEntry(date: .now, data: snapshot)
+        let diagnostic: String
+        if defaults == nil {
+            diagnostic = "GROUP UNAVAILABLE"
+        } else if data == nil {
+            diagnostic = "NO SHARED DATA"
+        } else if data.flatMap({ try? JSONDecoder().decode(AtriumSnapshot.self, from: $0) }) == nil {
+            diagnostic = "DECODE FAILED"
+        } else {
+            diagnostic = "DATA OK"
+        }
+        return AtriumEntry(date: .now, data: snapshot, diagnostic: diagnostic)
     }
 }
 
@@ -94,6 +105,7 @@ struct AtriumWidgetView: View {
                 Spacer()
                 Image(systemName: kind.symbol).font(.system(size: 30)).foregroundStyle(.gray)
                 Text(emptyMessage).font(.system(size: 12)).foregroundStyle(.gray).lineLimit(3)
+                Text(entry.diagnostic).font(.system(size: 9, weight: .medium, design: .monospaced)).foregroundStyle(.orange).lineLimit(1)
                 Spacer()
             } else {
                 ForEach(Array(items.prefix(capacity))) { item in
