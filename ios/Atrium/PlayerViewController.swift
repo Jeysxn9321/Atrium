@@ -364,6 +364,24 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     // Video is in the top half, our own controls in the bottom half.
     // This is a manual mode because public UIKit geometry does not expose a
     // dependable physical hinge angle. It is not VLC's built-in UI.
+    @objc private func tabletopTouchDown(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.10, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.backgroundColor = UIColor(red: 0.32, green: 0.40, blue: 0.54, alpha: 1)
+            sender.layer.borderColor = UIColor.white.withAlphaComponent(0.48).cgColor
+            sender.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
+        }
+    }
+
+    @objc private func tabletopTouchUp(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.20, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.backgroundColor = sender === self.tablePlay
+                ? UIColor(red: 0.21, green: 0.24, blue: 0.31, alpha: 1)
+                : UIColor(red: 0.15, green: 0.17, blue: 0.22, alpha: 1)
+            sender.layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
+            sender.transform = .identity
+        }
+    }
+
     private func buildTabletopControls() {
         // Reference-matched Duo dashboard: video above, dark tiled controls below.
         tablePanel.translatesAutoresizingMaskIntoConstraints = false
@@ -437,6 +455,14 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         configureTile(tableFitButton, "Fit or fill video")
         tableFitButton.setImage(symbol("arrow.up.left.and.arrow.down.right", 20), for: .normal)
         tableFitButton.addTarget(self, action: #selector(fitTapped), for: .touchUpInside)
+
+        // Highlight every tabletop action, including buttons that open native menus.
+        for button in [close, back, forward, tablePlay, tableAudioButton,
+                       tableSubtitleButton, tableSpeedButton, tableFitButton] {
+            button.addTarget(self, action: #selector(tabletopTouchDown(_:)), for: .touchDown)
+            button.addTarget(self, action: #selector(tabletopTouchUp(_:)),
+                             for: [.touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit])
+        }
 
         let header = UIView()
         header.backgroundColor = UIColor(red: 0.13, green: 0.15, blue: 0.19, alpha: 1)
