@@ -420,6 +420,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         let back = tile("gobackward.10", "Back 10 seconds", #selector(backTapped))
         let forward = tile("goforward.10", "Forward 10 seconds", #selector(forwardTapped))
         configureTile(tablePlay, "Play or pause")
+        tablePlay.backgroundColor = UIColor(red: 0.21, green: 0.24, blue: 0.31, alpha: 1)
         tablePlay.setImage(symbol("pause.fill", 29), for: .normal)
         tablePlay.addTarget(self, action: #selector(playTapped), for: .touchUpInside)
         configureTile(tableAudioButton, "Audio tracks")
@@ -470,12 +471,13 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         tableProgress.maximumValue = 1
         tableProgress.minimumTrackTintColor = UIColor(red: 0.94, green: 0.15, blue: 0.20, alpha: 1)
         tableProgress.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.22)
+        tableProgress.transform = CGAffineTransform(scaleX: 1, y: 0.72)
         tableProgress.accessibilityLabel = "Playback progress"
         tableProgress.addTarget(self, action: #selector(tableScrubStarted), for: .touchDown)
         tableProgress.addTarget(self, action: #selector(tableScrubMoved), for: .valueChanged)
         tableProgress.addTarget(self, action: #selector(tableScrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         for label in [tableElapsed, tableRemaining] {
-            label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             label.textColor = UIColor.white.withAlphaComponent(0.8)
             label.text = "0:00"
         }
@@ -493,12 +495,22 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         tableBrightness.value = Float(UIScreen.main.brightness)
         tableBrightness.minimumTrackTintColor = .white
         tableBrightness.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
+        tableBrightness.transform = CGAffineTransform(scaleX: 1, y: 0.80)
         tableBrightness.accessibilityLabel = "Screen brightness"
         tableBrightness.addTarget(self, action: #selector(tableBrightnessChanged), for: .valueChanged)
         tableVolume.showsVolumeSlider = true
         tableVolume.showsRouteButton = false
         tableVolume.tintColor = .white
         tableVolume.accessibilityLabel = "System volume"
+        // MPVolumeView uses a private system slider: match its track/thumb appearance
+        // only where UIKit exposes the underlying UISlider, without replacing volume APIs.
+        for child in tableVolume.subviews {
+            if let volumeSlider = child as? UISlider {
+                volumeSlider.minimumTrackTintColor = .white
+                volumeSlider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
+                volumeSlider.transform = CGAffineTransform(scaleX: 1, y: 0.80)
+            }
+        }
         func sliderTile(_ icon: String, _ control: UIView) -> UIView {
             let box = UIView()
             box.backgroundColor = tileColor
@@ -528,21 +540,23 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.axis = .vertical
         stack.spacing = 3
+        stack.distribution = .equalSpacing
         scroll.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 3),
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -8),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 5),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -5),
-            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -10)
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -10),
+            stack.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor, constant: -16)
         ])
         // Fill the full lower half instead of leaving a large unused area.
         // Proportional heights adapt to the Duo's actual fold/window size;
         // minimum touch heights remain enforced for compact windows.
         for (section, fraction) in [(header, CGFloat(0.09)),
-                                    (first, CGFloat(0.29)),
-                                    (second, CGFloat(0.24)),
-                                    (progressRow, CGFloat(0.11)),
+                                    (first, CGFloat(0.25)),
+                                    (second, CGFloat(0.20)),
+                                    (progressRow, CGFloat(0.10)),
                                     (levels, CGFloat(0.23))] {
             let proportional = section.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor, multiplier: fraction)
             proportional.priority = UILayoutPriority(750)
@@ -558,6 +572,12 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         tableProgress.setThumbImage(thumb, for: .highlighted)
         tableBrightness.setThumbImage(thumb, for: .normal)
         tableBrightness.setThumbImage(thumb, for: .highlighted)
+        for child in tableVolume.subviews {
+            if let volumeSlider = child as? UISlider {
+                volumeSlider.setThumbImage(thumb, for: .normal)
+                volumeSlider.setThumbImage(thumb, for: .highlighted)
+            }
+        }
 
         tablePanelTopConstraint = tablePanel.topAnchor.constraint(equalTo: videoView.bottomAnchor)
         tablePanelBottomConstraint = tablePanel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
@@ -591,6 +611,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     private func setTabletop(_ enable: Bool) {
         guard enable != tabletopMode else { return }
         hideWork?.cancel()
+        // Resolve the previous geometry before animating to the new fold layout.
+        view.layoutIfNeeded()
         // Deactivate all constraints from the old mode before activating the new ones.
         // Otherwise Auto Layout may break the video height constraint when the
         // invisible lower control panel still requires a non-zero height.
@@ -616,8 +638,11 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         controls.isUserInteractionEnabled = !enable
         fill = !enable
         view.setNeedsLayout()
-        view.layoutIfNeeded()
-        applyFill(force: true)
+        UIView.animate(withDuration: 0.26, delay: 0, options: [.beginFromCurrentState, .curveEaseInOut, .allowUserInteraction]) {
+            self.view.layoutIfNeeded()
+        } completion: { [weak self] _ in
+            self?.applyFill(force: true)
+        }
         if !enable { showControls() }
     }
 
