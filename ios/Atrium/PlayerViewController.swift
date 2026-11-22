@@ -61,7 +61,20 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     private var pickedAudio = false
     private var closing = false
     private var lastSent = Date.distantPast
-    private var fill = true
+    // Fit (the whole picture, subtitles never cut) unless the person chose Fill on this screen shape:
+    // the Duo's outer and inner screens, upright or sideways, and tabletop each remember their own choice.
+    private var fillChoices: [String: Bool] = (UserDefaults.standard.dictionary(forKey: "atrium.player.fill") as? [String: Bool]) ?? [:]
+    private var shownFill: Bool?
+    private var screenShape: String {
+        if tabletopMode { return "tabletop" }
+        let s = videoView.bounds.size
+        guard s.width > 0, s.height > 0 else { return "landscape" }
+        let r = s.width / s.height
+        return r < 1 ? "portrait" : (r >= 1.95 ? "wide" : "landscape")
+    }
+    private var fill: Bool { fillChoices[screenShape] ?? false }
+    private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    private var nowPlayingAt = Date.distantPast
     private var lastCropGeometry: String?
     private var lastPos = 0.0
     private var startedAt = Date.distantPast
@@ -97,6 +110,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         titleLabel.isHidden = view.bounds.width < 540
         if tabletopMode { controls.alpha = 0; controls.isUserInteractionEnabled = false }
         applyFill()
+        if shownFill != fill { updateFitIcons() }
         if hingeIsAvailable { updateAutomaticTabletop() }
     }
 
@@ -168,6 +182,8 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         UIApplication.shared.isIdleTimerDisabled = true
 
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
+        setupRemoteCommands()
+        updateFitIcons()
         showControls()
     }
 
@@ -673,7 +689,6 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         }
         controls.alpha = enable ? 0 : 1
         controls.isUserInteractionEnabled = !enable
-        fill = !enable
         // Apply the intended video crop immediately, rather than after the
         // animation, so playback does not visibly snap at the end.
         applyFill(force: true)
@@ -814,12 +829,10 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     @objc private func backTapped() { player.jumpBackward(10); showControls() }
     @objc private func forwardTapped() { player.jumpForward(10); showControls() }
     @objc private func fitTapped() {
-        fill.toggle()
+        fillChoices[screenShape] = !fill
+        UserDefaults.standard.set(fillChoices, forKey: "atrium.player.fill")
         applyFill(force: true)
-        fitButton.setImage(symbol(fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"), for: .normal)
-        fitButton.accessibilityValue = fill ? "Fill screen" : "Fit full image"
-        tableFitButton.setImage(symbol(fill ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", 20), for: .normal)
-        tableFitButton.accessibilityValue = fill ? "Fill screen" : "Fit full image"
+        updateFitIcons()
         showControls()
     }
 
@@ -862,6 +875,59 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         showControls()
     }
 
+    private func updateFitIcons() {
+        let f = fill
+        shownFill = f
+        fitButton.setImage(symbol(f ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"), for: .normal)
+        fitButton.accessibilityValue = f ? "Fill screen" : "Fit full image"
+        tableFitButton.setImage(symbol(f ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", 20), for: .normal)
+        tableFitButton.accessibilityValue = f ? "Fill screen" : "Fit full image"
+    }
+
+    // MARK: Control Center, lock screen, headphones and CarPlay buttons
+
+    private func setupRemoteCommands() {
+        let c = MPRemoteCommandCenter.shared()
+        func on(_ cmd: MPRemoteCommand, _ act: @escaping (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
+            cmd.isEnabled = true
+            remoteTargets.append((cmd, cmd.addTarget(handler: act)))
+        }
+        on(c.playCommand) { [weak self] _ in self?.player.play(); self?.remoteChanged(); return .success }
+        on(c.pauseCommand) { [weak self] _ in self?.player.pause(); self?.remoteChanged(); return .success }
+        on(c.togglePlayPauseCommand) { [weak self] _ in
+            guard let self else { return .commandFailed }
+            if self.player.isPlaying { self.player.pause() } else { self.player.play() }
+            self.remoteChanged(); return .success
+        }
+        c.skipForwardCommand.preferredIntervals = [10]
+        c.skipBackwardCommand.preferredIntervals = [10]
+        on(c.skipForwardCommand) { [weak self] _ in self?.player.jumpForward(10); self?.remoteChanged(); return .success }
+        on(c.skipBackwardCommand) { [weak self] _ in self?.player.jumpBackward(10); self?.remoteChanged(); return .success }
+        on(c.changePlaybackPositionCommand) { [weak self] e in
+            guard let self, let e = e as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            self.player.time = VLCTime(int: Int32(max(0, e.positionTime) * 1000))
+            self.remoteChanged(); return .success
+        }
+    }
+    private func remoteChanged() {
+        DispatchQueue.main.async { [weak self] in self?.updatePlayIcon(); self?.updateNowPlaying() }
+    }
+    private func updateNowPlaying() {
+        guard !closing else { return }
+        nowPlayingAt = Date()
+        var info: [String: Any] = [MPMediaItemPropertyTitle: titleText, MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+                                   MPNowPlayingInfoPropertyElapsedPlaybackTime: positionSeconds(),
+                                   MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? Double(player.rate) : 0.0]
+        let len = lengthSeconds()
+        if len > 0 { info[MPMediaItemPropertyPlaybackDuration] = len }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+    private func clearRemoteCommands() {
+        remoteTargets.forEach { $0.0.removeTarget($0.1) }
+        remoteTargets.removeAll()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     private func updatePlayIcon() {
         playButton.setImage(symbol(player.isPlaying ? "pause.fill" : "play.fill", 40), for: .normal)
         tablePlay.setImage(symbol(player.isPlaying ? "pause.fill" : "play.fill", 30), for: .normal)
@@ -882,6 +948,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
 
     private func tick() {
         guard !closing else { return }
+        if Date().timeIntervalSince(nowPlayingAt) > 5 { updateNowPlaying() }
         let len = lengthSeconds(), pos = positionSeconds()
         if !scrubbing {
             slider.value = len > 0 ? Float(min(1, pos / len)) : 0
@@ -1005,6 +1072,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
                 break
             }
             self.updatePlayIcon()
+            self.updateNowPlaying()
         }
     }
 
@@ -1020,6 +1088,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             let pos = positionSeconds()
             onProgress?(pos > 1 ? pos : lastPos, lengthSeconds(), ended)
         }
+        clearRemoteCommands()
         player.delegate = nil
         let p = player
         DispatchQueue.global().async { p.stop() }   // a stalled stream must not freeze the screen
