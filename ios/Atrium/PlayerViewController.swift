@@ -82,7 +82,12 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     private var playbackRateIndex = 1
     private var brightnessAtPanStart: CGFloat = 0
 
-    init(url: URL, title: String, start: Double, audioLanguage: String) {
+    // Subtitles to turn on, in order of preference (a Spanish series: ["eng", "fre"]); empty = off.
+    private var subtitleLanguages: [String] = []
+    private var pickedSubs = false
+
+    init(url: URL, title: String, start: Double, audioLanguage: String, subtitleLanguages: [String] = []) {
+        self.subtitleLanguages = subtitleLanguages.map { $0.lowercased() }.filter { !$0.isEmpty }
         self.url = url
         self.titleText = title
         self.startAt = start
@@ -973,7 +978,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             messageLabel.text = ""
         }
         if started && pos > 1 { lastPos = pos }
-        if started && !pickedAudio && Date().timeIntervalSince(startedAt) < 12 && Date().timeIntervalSince(startedAt) > 1 { pickLanguage(); rebuildMenus() }
+        if started && (!pickedAudio || (!pickedSubs && !subtitleLanguages.isEmpty)) && Date().timeIntervalSince(startedAt) < 12 && Date().timeIntervalSince(startedAt) > 1 { pickLanguage(); pickSubtitles(); rebuildMenus() }
         if started && player.isPlaying && Date().timeIntervalSince(lastSent) > 20 { send(ended: false) }
     }
 
@@ -992,7 +997,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         let wanted: [String]
         switch language {
         case "fre", "fra", "fr": wanted = ["french", "français", "[fr", " fre", "fra"]
-        case "spa", "es": wanted = ["spanish", "español", "[es", " spa"]
+        case "spa", "es": wanted = ["spanish", "español", "espanol", "castellano", "castilian", "[es", " spa"]
         case "jpn", "ja": wanted = ["japanese", "日本語", "[ja", " jpn"]
         default: wanted = ["english", "[en", " eng"]
         }
@@ -1001,6 +1006,30 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
             if wanted.contains(where: { low.contains($0) }) {
                 player.currentAudioTrackIndex = ids[i].int32Value
                 break
+            }
+        }
+    }
+
+    private static func words(for code: String) -> [String] {
+        switch code {
+        case "fre", "fra", "fr": return ["french", "français", "francais", "[fr", " fre", "fra"]
+        case "spa", "es": return ["spanish", "español", "espanol", "castellano", "[es", " spa"]
+        default: return ["english", "[en", " eng"]
+        }
+    }
+    // The first wanted subtitle language that the file has (forced or signs-only tracks last).
+    private func pickSubtitles() {
+        guard !pickedSubs, !subtitleLanguages.isEmpty,
+              let names = player.videoSubTitlesNames as? [String], let ids = player.videoSubTitlesIndexes as? [NSNumber],
+              names.count == ids.count, names.count > 1 else { return }
+        pickedSubs = true
+        for code in subtitleLanguages {
+            let wanted = Self.words(for: code)
+            let matches = names.indices.filter { i in ids[i].int32Value >= 0 && wanted.contains(where: { names[i].lowercased().contains($0) }) }
+            let dialogue = matches.first { i in let n = names[i].lowercased(); return !n.contains("forced") && !n.contains("sign") }
+            if let i = dialogue ?? matches.first {
+                player.currentVideoSubTitleIndex = ids[i].int32Value
+                return
             }
         }
     }
@@ -1053,6 +1082,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
                 // the tracks are known a moment after playing starts
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                     self?.pickLanguage()
+                    self?.pickSubtitles()
                     self?.rebuildMenus()
                 }
             case .buffering:

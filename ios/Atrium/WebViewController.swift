@@ -204,7 +204,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 store?.set(data, forKey: "snapshot")
                 WidgetCenter.shared.reloadAllTimelines()
             }
-            let p = PlayerViewController(url: url, title: title, start: start, audioLanguage: lang)
+            let subs = ((body["subs"] as? String) ?? "").split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            let p = PlayerViewController(url: url, title: title, start: start, audioLanguage: lang, subtitleLanguages: subs)
             p.onProgress = { [weak self] pos, dur, ended in
                 self?.tell("progress", ["pos": pos, "dur": dur, "ended": ended])
             }
