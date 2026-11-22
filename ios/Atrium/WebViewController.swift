@@ -57,6 +57,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                   title: title,
                   subtitle: subtitle ? subtitle.textContent.trim().slice(0,100) : '',
                   progress: value !== null && isFinite(value) ? value : null,
+                  image: image && /^https:/.test(image.currentSrc || image.src || '') ? (image.currentSrc || image.src) : null,
                   url: 'atrium://home'};
               }).filter(function(x) { return x.title; });
             }
