@@ -1010,7 +1010,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   // whatever was typed before this version is written to the second place as well
   copy.keys.forEach(k => { try { const v = localStorage.getItem(k); if (v) copy.put(k, v); } catch (e) {} });
   const reloadSoon = () => copy.settled().then(() => location.reload());
-  const BUILD = '2026-11-17 · Asian Dramas trending and trailers';
+  const BUILD = '2026-11-22 · Asian Dramas laid out like the other sections';
   const K = { stremio: 'atrium.m.stremio', tmdb: 'atrium.m.tmdb', max: 'atrium.m.max', ids: 'atrium.m.tmdbIds' };
   const stremioKey = () => { const k = String(mem.get(K.stremio, '')).trim(); return /^[A-Za-z0-9+/=_\-]{8,}$/.test(k) ? k : ''; };
   const tmdbKey = () => { const k = String(mem.get(K.tmdb, '')).trim(); return /^[A-Za-z0-9._\-]{20,}$/.test(k) ? k : ''; };
@@ -1794,6 +1794,34 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       return keep(slot, { metas: metas, source: 'TMDB weekly TV trending' });
     } catch (e) { return { metas: [], error: 'TMDB unavailable' }; }
   }
+  // Asian dramas listed the way Movies and TV Shows are: popular, top rated, this year's, by genre.
+  // TMDB discover, Korean and Japanese series tagged Drama; animation, talk, news, reality, kids and
+  // documentaries are left out, so the shelves hold dramas and not anime or variety shows.
+  const DRAMA_GENRE = { romance: 'k9840', comedy: '35', crime: '80', mystery: '9648', action: '10759', fantasy: '10765', family: '10751', historical: '10768' };
+  async function tmdbAsianDiscover(country, list, genre, page) {
+    if (!['all', 'kr', 'jp'].includes(country) || !['popular', 'rated', 'new'].includes(list)) return { metas: [], error: 'bad request' };
+    if (genre && !DRAMA_GENRE[genre]) return { metas: [], error: 'bad genre' };
+    page = Math.max(1, Math.min(25, parseInt(page, 10) || 1));
+    if (!tmdbKey()) return { metas: [], error: 'no key' };
+    const slot = 'asian-discover/' + [country, list, genre || '', page].join('/'), old = cached(slot, 120);
+    if (old) return old;
+    const g = genre ? DRAMA_GENRE[genre] : '';
+    const today = new Date().toISOString().slice(0, 10);
+    let q = 'language=en-CA&include_adult=false&page=' + page +
+      '&with_origin_country=' + (country === 'kr' ? 'KR' : country === 'jp' ? 'JP' : 'KR%7CJP') +
+      '&without_genres=16,10767,10763,10764,10762,99' +
+      '&with_genres=18' + (g && g[0] !== 'k' ? ',' + g : '') + (g && g[0] === 'k' ? '&with_keywords=' + g.slice(1) : '');
+    if (list === 'rated') q += '&sort_by=vote_average.desc&vote_count.gte=' + (country === 'all' ? 150 : 80);
+    else if (list === 'new') q += '&sort_by=popularity.desc&first_air_date.gte=' + today.slice(0, 4) + '-01-01&first_air_date.lte=' + today;
+    else q += '&sort_by=popularity.desc&vote_count.gte=5';
+    try {
+      const j = await tm('discover/tv', q);
+      const rows = (j.results || []).filter(r => r && r.id).map(r => Object.assign({}, r, { media_type: 'tv' }));
+      const metas = (await Promise.all(rows.map(r => asMeta(r).catch(() => null)))).filter(Boolean);
+      saveIds();
+      return keep(slot, { metas: metas, page: page, pages: Math.min(25, +j.total_pages || 1) });
+    } catch (e) { return { metas: [], error: 'TMDB unavailable' }; }
+  }
   // Search at TMDB, which also knows titles the catalogue does not (Quebec shows, for one).
   async function tmdbSearch(text) {
     text = String(text || '').trim();
@@ -1863,6 +1891,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       case '/api/dramas': return getDramaCatalogs(q.get('country') || '', q.get('search') || '');
       case '/api/dramas/meta': return getDramaMeta(q.get('type') || '', q.get('id') || '');
       case '/api/dramas/trending': return tmdbAsianTrending(q.get('country') || 'all');
+      case '/api/dramas/discover': return tmdbAsianDiscover(q.get('country') || 'all', q.get('list') || 'popular', q.get('genre') || '', q.get('page') || '1');
       case '/api/streams': return getStreams(q.get('type') || '', q.get('id') || '', q.get('section') || '');
       case '/api/play': return playStream(q, opt.body);
       case '/api/download': return downloadStream(opt.body);
@@ -2785,7 +2814,7 @@ let contCache = [], renderSeq = 0;
 
 // Keep both countries visible as separate rails, including when an add-on is missing.
 // A rail always keeps its name, so users can tell what their Stremio account returned.
-function dramaShelf(country, query, seq) {
+function dramaShelf(country, query, seq, quiet) {
   const title = country === 'all' ? 'Asian Dramas' : country === 'kr' ? 'Korean Dramas' : 'Japanese Dramas';
   const row = makeRow(country === 'all' && tab === 'dramas' ? 'Popular Asian dramas' : title);
   const strip = $('.strip', row);
@@ -2804,6 +2833,8 @@ function dramaShelf(country, query, seq) {
       if (seen.size <= 48) strip.appendChild(posterCard(m));
     }));
     if (strip.children.length) return;
+    // On the Asian Dramas page an empty add-on row simply goes, as empty rows do on the other pages.
+    if (quiet && $('#rows .card')) { row.remove(); return; }
     const msg = j.error === 'not signed in'
       ? 'Sign in to your Stremio account under Settings.'
       : j.error
@@ -2818,6 +2849,27 @@ function dramaShelf(country, query, seq) {
   lazy.observe(row);
   return row;
 }
+// An Asian dramas row drawn like the Movies and TV Shows rows: wide cards with the still and the title.
+// The titles come from TMDB (with their IMDb id, so the usual sources play them). Without a TMDB key
+// the row gives way to the add-on shelf given as `fallback`, or disappears.
+function dramaRow(title, list, genre, seq, fallback) {
+  const row = makeRow(title);
+  const strip = $('.strip', row);
+  skeletons(strip, 12, true);
+  row._load = async () => {
+    let j = null;
+    try { j = await local('/api/dramas/discover?country=all&list=' + list + (genre ? '&genre=' + genre : '')); } catch (e) {}
+    if (seq !== renderSeq || !row.isConnected) return;
+    strip.innerHTML = '';
+    ((j && j.metas) || []).forEach(m => { if (m && m.id && m.name) strip.appendChild(tileCard(m)); });
+    if (strip.children.length) return;
+    if (fallback) row.replaceWith(fallback()); else row.remove();
+  };
+  lazy.observe(row);
+  return row;
+}
+const DRAMA_ROWS = [['Romance', 'romance'], ['Comedy', 'comedy'], ['Crime', 'crime'], ['Mystery', 'mystery'], ['Action & Adventure', 'action'],
+  ['Fantasy', 'fantasy'], ['Family', 'family'], ['Historical', 'historical']];
 // Share TMDB's live weekly trend across the ranked shelf and the cinematic trailer banner.
 const asianTrendingCache = new Map();
 function asianTrending(country) {
@@ -2847,38 +2899,34 @@ function asianTrendingRow(country, seq) {
   return row;
 }
 let asianFilter = 'all';
+// The Asian Dramas page, built like Movies and TV Shows: the banner, the Top 10, wide rows by list and
+// by genre, then the Korean and Japanese catalogues of the installed add-ons. Korean only, Japanese
+// only and each genre as a grid are in the Categories menu, as on the other pages.
 function renderDramaHub(seq, query) {
   const rows = $('#rows');
   heroOff();
   rows.classList.remove('flat');
   rows.innerHTML = '';
-  const bar = el('<div class="catbar"><div class="chips"></div></div>');
-  [['all', 'All'], ['kr', 'Korean'], ['jp', 'Japanese']].forEach(([value, label]) => {
-    const chip = el('<button class="chip' + (asianFilter === value ? ' on' : '') + '">' + label + '</button>');
-    chip.onclick = () => {
-      if (asianFilter === value) return;
-      asianFilter = value;
-      renderDramaHub(++renderSeq, $('#q').value.trim());
-    };
-    $('.chips', bar).appendChild(chip);
+  if (query) {
+    rows.classList.add('flat');
+    rows.appendChild(dramaShelf('all', query, seq));
+    return;
+  }
+  rows.appendChild(asianTrendingRow('all', seq));
+  asianTrending('all').then(async list => {
+    if (seq !== renderSeq || tab !== 'dramas') return;
+    const featured = list.filter(m => m.background && m.description).slice(0, 5);
+    if (featured.length) await within(tmdbTrailer(featured[0], featured[0].type, featured[0].id), 4500);
+    if (seq !== renderSeq || tab !== 'dramas') return;
+    heroSet(featured.map(m => ({ m: m })));
+    if (!featured.length) rows.classList.add('flat');
   });
-  rows.appendChild(bar);
-  if (!query) {
-    rows.appendChild(asianTrendingRow(asianFilter, seq));
-    asianTrending(asianFilter).then(async list => {
-      if (seq !== renderSeq || tab !== 'dramas') return;
-      const featured = list.filter(m => m.background && m.description).slice(0, 5);
-      if (featured.length) await within(tmdbTrailer(featured[0], featured[0].type, featured[0].id), 4500);
-      if (seq !== renderSeq || tab !== 'dramas') return;
-      heroSet(featured.map(m => ({ m: m })));
-      if (!featured.length) rows.classList.add('flat');
-    });
-  }
-  rows.appendChild(dramaShelf(asianFilter, query, seq));
-  if (asianFilter === 'all' && !query) {
-    rows.appendChild(dramaShelf('kr', '', seq));
-    rows.appendChild(dramaShelf('jp', '', seq));
-  }
+  rows.appendChild(dramaRow('Popular Asian dramas', 'popular', '', seq));
+  rows.appendChild(dramaShelf('kr', '', seq, true));
+  rows.appendChild(dramaShelf('jp', '', seq, true));
+  rows.appendChild(dramaRow('Top rated', 'rated', '', seq));
+  rows.appendChild(dramaRow('New this year', 'new', '', seq));
+  DRAMA_ROWS.forEach(([label, g]) => rows.appendChild(dramaRow(label, 'popular', g, seq)));
 }
 async function render() {
   const seq = ++renderSeq;
@@ -2961,7 +3009,7 @@ async function render() {
     rows.appendChild(catalogRow('Top rated TV shows', 'series', 'imdbRating'));
     rows.appendChild(catalogRow('Top rated movies', 'movie', 'imdbRating'));
     GENRES.slice(0, 6).forEach((g, i) => rows.appendChild(catalogRow(g + (i % 2 ? ' movies' : ' TV shows'), i % 2 ? 'movie' : 'series', 'top', g)));
-    rows.appendChild(dramaShelf('all', '', seq));
+    rows.appendChild(dramaRow('Asian Dramas', 'popular', '', seq, () => dramaShelf('all', '', seq)));
     rows.appendChild(el('<div class="credit">Some trailers and titles come from TMDB. Atrium uses the TMDB API but is not endorsed or certified by TMDB.</div>'));
   } else {
     const word = tab === 'movie' ? 'movies' : 'TV shows';
@@ -4690,17 +4738,60 @@ const CATS = {
   series: FILM_CATS.concat(['Reality-TV', 'Talk-Show', 'Game-Show']),
   anime: ['Action', 'Adventure', 'Comedy', 'Demons', 'Drama', 'Fantasy', 'Game', 'Historical', 'Horror', 'Kids', 'Magic', 'Martial Arts', 'Mecha', 'Military',
     'Music', 'Mystery', 'Parody', 'Police', 'Psychological', 'Racing', 'Romance', 'Samurai', 'School', 'Sci-Fi', 'Slice of Life', 'Space', 'Sports',
-    'Super Power', 'Supernatural', 'Thriller', 'Vampire']
+    'Super Power', 'Supernatural', 'Thriller', 'Vampire'],
+  dramas: ['Korean', 'Japanese'].concat(DRAMA_ROWS.map(r => r[0]))
 };
 const SORTS = {
   movie: [['top', 'Most popular'], ['imdbRating', 'Top rated'], ['latest', 'Latest']],
   series: [['top', 'Most popular'], ['imdbRating', 'Top rated'], ['latest', 'Latest']],
-  anime: [['kitsu-anime-popular', 'Most popular'], ['kitsu-anime-rating', 'Top rated'], ['latest', 'Latest']]
+  anime: [['kitsu-anime-popular', 'Most popular'], ['kitsu-anime-rating', 'Top rated'], ['latest', 'Latest']],
+  dramas: [['popular', 'Most popular'], ['rated', 'Top rated'], ['new', 'Latest']]
 };
 const cat = {}, catSort = {};
 let catSeq = 0;
 
+// A category of Asian dramas as a grid: Korean, Japanese or one genre, page after page from TMDB.
+function renderDramaCategory(choice) {
+  const rows = $('#rows');
+  const seq = ++catSeq;
+  heroOff();
+  rows.classList.add('flat');
+  const sort = catSort.dramas || 'popular';
+  const country = choice === 'Korean' ? 'kr' : choice === 'Japanese' ? 'jp' : 'all';
+  const g = (DRAMA_ROWS.find(r => r[0] === choice) || [])[1] || '';
+  const bar = el('<div class="catbar"><div class="chips"></div></div>');
+  SORTS.dramas.forEach(x => {
+    const c = el('<button class="chip' + (x[0] === sort ? ' on' : '') + '">' + x[1] + '</button>');
+    c.onclick = () => { catSort.dramas = x[0]; render(); };
+    $('.chips', bar).appendChild(c);
+  });
+  const grid = el('<div id="grid"></div>');
+  const more = el('<div style="height:1px"></div>');
+  rows.appendChild(el('<div class="row"><h2>Asian Dramas · ' + esc(choice) + '</h2></div>'));
+  rows.appendChild(bar); rows.appendChild(grid); rows.appendChild(more);
+  const seen = new Set();
+  let page = 1, pages = 1, busy = false, done = false;
+  async function load() {
+    if (busy || done) return;
+    if (seq !== catSeq) { watch.disconnect(); return; }
+    busy = true;
+    let j = null;
+    try { j = await local('/api/dramas/discover?country=' + country + '&list=' + sort + (g ? '&genre=' + g : '') + '&page=' + page); } catch (e) {}
+    if (seq !== catSeq) return;
+    ((j && j.metas) || []).forEach(m => { if (m && m.id && !seen.has(m.id)) { seen.add(m.id); grid.appendChild(posterCard(m)); } });
+    pages = (j && j.pages) || 1;
+    if (!j || j.error || ++page > pages) done = true;
+    busy = false;
+    if (done && !grid.children.length) rows.appendChild(el('<div class="empty">' + (j && j.error === 'no key'
+      ? 'Add your TMDB key in Settings to browse Asian dramas by category.' : 'Nothing in this category.') + '</div>'));
+    if (!done && more.getBoundingClientRect().top < window.innerHeight + 800) load();
+  }
+  const watch = new IntersectionObserver(en => { if (en[0].isIntersecting) load(); }, { rootMargin: '800px 0px' });
+  watch.observe(more);
+  load();
+}
 function renderCategory(type, genre) {
+  if (type === 'dramas') { renderDramaCategory(genre); return; }
   const rows = $('#rows');
   const seq = ++catSeq;
   heroOff();
