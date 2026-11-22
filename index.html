@@ -2929,10 +2929,11 @@ function renderDramaHub(seq, query) {
   });
   rows.appendChild(dramaRow('Popular Asian dramas', 'popular', '', seq));
   rows.appendChild(dramaShelf('kr', '', seq, true));
-  rows.appendChild(dramaShelf('jp', '', seq, true));
   rows.appendChild(dramaRow('Top rated', 'rated', '', seq));
   rows.appendChild(dramaRow('New this year', 'new', '', seq));
   DRAMA_ROWS.forEach(([label, g]) => rows.appendChild(dramaRow(label, 'popular', g, seq)));
+  // The Japanese add-on (Yukistreams) has no artwork, only placeholders: its row goes last.
+  rows.appendChild(dramaShelf('jp', '', seq, true));
 }
 async function render() {
   const seq = ++renderSeq;
