@@ -1,7 +1,7 @@
 import WidgetKit
 import SwiftUI
 
-private let groupID = "group.app.atrium.widgets"
+private let groupID = AppGroup.id
 
 struct AtriumItem: Codable, Identifiable {
     var id: String

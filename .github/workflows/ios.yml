@@ -53,6 +53,12 @@ jobs:
       - name: Package the app
         run: |
           cd ios/build/Atrium.xcarchive/Products/Applications
+          # No real signature (AltStore or Sideloadly signs with your Apple ID), but the entitlements must be
+          # in the binaries: that is where AltStore reads which App Group to create for the app and its widgets.
+          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/ios/AtriumWidgets/AtriumWidgets.entitlements" Atrium.app/PlugIns/AtriumWidgets.appex
+          codesign --force --sign - --entitlements "$GITHUB_WORKSPACE/ios/Atrium/Atrium.entitlements" Atrium.app
+          codesign -d --entitlements - Atrium.app 2>&1 | tee -a "$GITHUB_WORKSPACE/logs/ipa.txt"
+          codesign -d --entitlements - Atrium.app/PlugIns/AtriumWidgets.appex 2>&1 | tee -a "$GITHUB_WORKSPACE/logs/ipa.txt"
           rm -rf Payload && mkdir Payload && cp -R Atrium.app Payload/
           zip -qry "$GITHUB_WORKSPACE/Atrium.ipa" Payload
           ls -la "$GITHUB_WORKSPACE/Atrium.ipa" | tee "$GITHUB_WORKSPACE/logs/ipa.txt"

@@ -121,8 +121,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     @objc private func showWidgetDiagnostics(_ gesture: UILongPressGestureRecognizer) {
         guard gesture.state == .began else { return }
-        let groupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.app.atrium.widgets")
-        let defaults = UserDefaults(suiteName: "group.app.atrium.widgets")
+        let groupContainer = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id)
+        let defaults = UserDefaults(suiteName: AppGroup.id)
         let probeKey = "atrium.widget.diagnostic.probe"
         let probe = UUID().uuidString
         defaults?.set(probe, forKey: probeKey)
@@ -170,7 +170,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 widgetLastCounts = ["continueWatching", "discover", "library"].reduce(into: [String: Int]()) { result, key in
                     result[key] = (snapshot[key] as? [Any])?.count ?? 0
                 }
-                let store = UserDefaults(suiteName: "group.app.atrium.widgets")
+                let store = UserDefaults(suiteName: AppGroup.id)
                 var merged = snapshot
                 if let previous = store?.data(forKey: "snapshot"),
                    let old = (try? JSONSerialization.jsonObject(with: previous)) as? [String: Any] {
@@ -195,7 +195,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             let title = (body["title"] as? String) ?? ""
             let start = (body["start"] as? Double) ?? 0
             let lang = (body["lang"] as? String) ?? "eng"
-            let store = UserDefaults(suiteName: "group.app.atrium.widgets")
+            let store = UserDefaults(suiteName: AppGroup.id)
             var snapshot = store?.data(forKey: "snapshot").flatMap {
                 (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
             } ?? [:]
@@ -211,7 +211,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             }
             p.onClose = { [weak self] in
                 self?.tell("closed", [:])
-                if let store = UserDefaults(suiteName: "group.app.atrium.widgets"),
+                if let store = UserDefaults(suiteName: AppGroup.id),
                    let data = store.data(forKey: "snapshot"),
                    var snapshot = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
                     snapshot.removeValue(forKey: "nowPlaying")
