@@ -74,6 +74,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     }
     private var fill: Bool { fillChoices[screenShape] ?? false }
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    private var subtitleRel = 16    // VLC's relative subtitle size: 16 is normal, a bigger number is smaller text
     private var nowPlayingAt = Date.distantPast
     private var lastCropGeometry: String?
     private var lastPos = 0.0
@@ -846,6 +847,7 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
     private func applyFill(force: Bool = false) {
         let size = videoView.bounds.size
         guard size.width > 0, size.height > 0 else { return }
+        applySubtitleSize()
         if !fill {
             if force || lastCropGeometry != nil {
                 player.videoCropGeometry = nil
@@ -862,6 +864,25 @@ final class PlayerViewController: UIViewController, VLCMediaPlayerDelegate, UIGe
         guard force || crop != lastCropGeometry else { return }
         crop.withCString { player.videoCropGeometry = UnsafeMutablePointer(mutating: $0) }
         lastCropGeometry = crop
+    }
+
+    // Fill enlarges the picture, and the subtitles drawn on it with it. In Fill the subtitles are made smaller
+    // by the same amount, so they keep the size they have in Fit; in Fit they are VLC's normal size.
+    private func applySubtitleSize() {
+        var rel = 16
+        let s = videoView.bounds.size
+        if fill, s.width > 0, s.height > 0 {
+            var videoAspect: CGFloat = 16.0 / 9.0
+            let v = player.videoSize
+            if v.width > 0, v.height > 0 { videoAspect = v.width / v.height }
+            let screenAspect = s.width / s.height
+            let zoom = max(screenAspect / videoAspect, videoAspect / screenAspect)
+            rel = min(40, max(16, Int((16 * zoom).rounded())))
+        }
+        guard rel != subtitleRel else { return }
+        subtitleRel = rel
+        let set = NSSelectorFromString("setTextRendererFontSize:")
+        if player.responds(to: set) { _ = player.perform(set, with: NSNumber(value: rel)) }
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
