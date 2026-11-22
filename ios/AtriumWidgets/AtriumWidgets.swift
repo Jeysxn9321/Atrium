@@ -133,17 +133,18 @@ private let ink = Color(red: 0.043, green: 0.043, blue: 0.051)
 private struct Still: View {
     let item: AtriumItem
     let art: UIImage?
+    // The still fills the space it is given and never makes it bigger (the overlay is cropped to it).
     var body: some View {
-        ZStack {
-            Color.white.opacity(0.08)
-            if let art {
-                Image(uiImage: art).resizable().aspectRatio(contentMode: .fill)
-            } else {
-                Text(item.title).font(.system(size: 13, weight: .heavy)).multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.75)).padding(8)
+        Color.white.opacity(0.08)
+            .overlay {
+                if let art {
+                    Image(uiImage: art).resizable().scaledToFill()
+                } else {
+                    Text(item.title).font(.system(size: 13, weight: .heavy)).multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.75)).padding(8)
+                }
             }
-        }
-        .clipped()
+            .clipped()
     }
 }
 
@@ -190,7 +191,7 @@ private struct Line: View {
     var body: some View {
         HStack(spacing: 10) {
             Still(item: item, art: art)
-                .frame(width: 80, height: 45)
+                .frame(width: 76, height: 43)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -259,12 +260,15 @@ struct AtriumWidgetView: View {
                     }
                 }
             default:
-                VStack(alignment: .leading, spacing: 10) {
+                // Fixed heights, so the whole layout always fits (the header was pushed off the top).
+                VStack(alignment: .leading, spacing: 8) {
                     header
                     Link(destination: link(items[0])) { Tile(item: items[0], art: art(items[0]), big: true) }
-                        .frame(maxHeight: 150)
-                    ForEach(Array(items.dropFirst().prefix(3))) { item in
-                        Link(destination: link(item)) { Line(item: item, art: art(item)) }
+                        .frame(height: 132)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(items.dropFirst().prefix(3))) { item in
+                            Link(destination: link(item)) { Line(item: item, art: art(item)) }.frame(height: 44)
+                        }
                     }
                     Spacer(minLength: 0)
                 }
