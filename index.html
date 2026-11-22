@@ -1774,7 +1774,7 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
   async function tmdbAsianTrending(country) {
     if (!['all', 'kr', 'jp'].includes(country)) return { metas: [], error: 'bad country' };
     if (!tmdbKey()) return { metas: [], error: 'no key' };
-    const slot = 'asian-trending/week/' + country, old = cached(slot, 45);
+    const slot = 'asian-trending/week2/' + country, old = cached(slot, 45);
     if (old) return old;
     try {
       const possible = [], seen = new Set();
@@ -1782,6 +1782,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
         const j = await tm('trending/tv/week', 'language=en-CA&page=' + page);
         (j.results || []).forEach(r => {
           if (!r || !r.id || seen.has(r.id)) return;
+          // anime, talk, news, reality, kids and documentaries are not dramas (the weekly chart has them all)
+          if ((r.genre_ids || []).some(g => [16, 10767, 10763, 10764, 10762, 99].includes(g))) return;
           const origins = r.origin_country || [];
           const kr = origins.includes('KR'), jp = origins.includes('JP');
           if (country === 'kr' ? !kr : country === 'jp' ? !jp : !(kr || jp)) return;
