@@ -1554,9 +1554,9 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       if (event === 'progress' && d) save(+d.pos || 0, +d.dur || 0, !!d.ended);
       else if (event === 'closed') { ownOpen = false; window.AtriumNative.on = null; }
     };
-    // A Spanish series plays in Spanish with English subtitles (French when there are none); the rest as set in Settings.
+    // A Spanish series or film plays in Spanish with English subtitles (French when there are none); the rest as set in Settings.
     let es = false;
-    if (type === 'series' && /^tt\d+/.test(root)) { const i = await timeout(tmdbInfo('series', root), 2500); es = !!(i && i.meta && i.meta.origLang === 'es'); }
+    if ((type === 'series' || type === 'movie') && /^tt\d+/.test(root)) { const i = await timeout(tmdbInfo(type, root), 2500); es = !!(i && i.meta && i.meta.origLang === 'es'); }
     const lang = es ? 'spa' : String(mem.get('atrium.m.lang', 'eng'));
     if (!appSend({ cmd: 'play', url: url, title: [name, sub].filter(Boolean).join(' · '), start: start, lang: lang, subs: es ? 'eng,fre' : '' })) { ownOpen = false; window.AtriumNative.on = null; }
   }
@@ -3445,8 +3445,8 @@ function getStreams(type, id) {
   const section = type === 'anime' ? 'anime' : (tab === 'dramas' && type === 'series' ? 'asian' : '');
   const key = type + '/' + id + (section ? '#' + section : '');
   if (!streamsCache.has(key)) {
-    // A Spanish series: versions with Spanish sound come first (the players then add English or French subtitles).
-    const lang = type === 'series' && isImdb(rootId(id)) ? within(tmdbInfo(type, rootId(id)), 2500).then(i => (i && i.meta && i.meta.origLang) || '') : Promise.resolve('');
+    // A Spanish series or film: versions with Spanish sound come first (the players then add English or French subtitles).
+    const lang = (type === 'series' || type === 'movie') && isImdb(rootId(id)) ? within(tmdbInfo(type, rootId(id)), 2500).then(i => (i && i.meta && i.meta.origLang) || '') : Promise.resolve('');
     streamsCache.set(key, Promise.all([local('/api/streams?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id) + (section ? '&section=' + section : '')), lang]).then(([j, origLang]) => {
       const es = origLang === 'es';
       const list = (j.streams || []).filter(s => typeof s.n === 'number');
