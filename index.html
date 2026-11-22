@@ -1554,8 +1554,11 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       if (event === 'progress' && d) save(+d.pos || 0, +d.dur || 0, !!d.ended);
       else if (event === 'closed') { ownOpen = false; window.AtriumNative.on = null; }
     };
-    const lang = String(mem.get('atrium.m.lang', 'eng'));
-    if (!appSend({ cmd: 'play', url: url, title: [name, sub].filter(Boolean).join(' · '), start: start, lang: lang })) { ownOpen = false; window.AtriumNative.on = null; }
+    // A Spanish series plays in Spanish with English subtitles (French when there are none); the rest as set in Settings.
+    let es = false;
+    if (type === 'series' && /^tt\d+/.test(root)) { const i = await timeout(tmdbInfo('series', root), 2500); es = !!(i && i.meta && i.meta.origLang === 'es'); }
+    const lang = es ? 'spa' : String(mem.get('atrium.m.lang', 'eng'));
+    if (!appSend({ cmd: 'play', url: url, title: [name, sub].filter(Boolean).join(' · '), start: start, lang: lang, subs: es ? 'eng,fre' : '' })) { ownOpen = false; window.AtriumNative.on = null; }
   }
 
   // Tests replace this one to see what would be opened.
@@ -1736,7 +1739,8 @@ html.tv #veil.on,html.tv #launch.on,html.tv #castMenu.on{animation:none}
       }
       const people = ((d.credits && d.credits.cast) || []).filter(p => p && p.name).slice(0, 5).map(p => p.name);
       const meta = { name: String(name || ''), description: about, releaseInfo: yr, runtime: run, imdbRating: +d.vote_count > 0 ? (+d.vote_average).toFixed(1) : '',
-        poster: img('w342', d.poster_path), background: img('w1280', d.backdrop_path), genres: (d.genres || []).filter(g => g && g.name).map(g => g.name), cast: people };
+        poster: img('w342', d.poster_path), background: img('w1280', d.backdrop_path), genres: (d.genres || []).filter(g => g && g.name).map(g => g.name), cast: people,
+        origLang: String(d.original_language || '') };
       if (kind === 'tv') meta.writer = makers; else meta.director = makers;
       if (full && kind === 'tv') {
         // every episode, twenty seasons to a request
@@ -3410,7 +3414,7 @@ function sizeGB(s) {
 // The sharpest picture this PC plays smoothly (2160 or 1080 lines), from its graphics card; the
 // home server works it out once. Above it a version is only chosen when there is no other.
 let deviceMax = 2160;
-function score(s) {
+function score(s, es) {
   const name = String(s.name || '');
   const t = (name + ' ' + (s.title || s.description || '') + ' ' + ((s.behaviorHints || {}).filename || '')).toLowerCase();
   let v = 0;
@@ -3422,9 +3426,10 @@ function score(s) {
   if (/remux/.test(t)) v += 25; else if (/blu-?ray|bdrip|brrip/.test(t)) v += 15; else if (/web-?dl|webrip/.test(t)) v += 10;
   if (/\b3d\b/.test(t)) v -= 500;
   { const lm = (String((s.behaviorHints || {}).filename || '') + ' ' + name + ' ' + String(s.title || '')).toLowerCase().match(/\[((?:eng|en|hin|hi|tam|tel|mal|kan|ben|jpn|jap|kor|chi|zho|rus|ger|deu|fre|fra|spa|ita|por|tur|ara|pol|ukr|tha|vie|ind)(?:\s*[,+&\/-]\s*(?:eng|en|hin|hi|tam|tel|mal|kan|ben|jpn|jap|kor|chi|zho|rus|ger|deu|fre|fra|spa|ita|por|tur|ara|pol|ukr|tha|vie|ind))+)\]/);
-    if (lm) { if (!/^(en|eng)$/.test(lm[1].split(/[,+&\/-]/)[0].trim())) v -= 2000; }
+    if (lm) { const f = lm[1].split(/[,+&\/-]/)[0].trim(); if (es ? !/^(es|spa|en|eng)$/.test(f) : !/^(en|eng)$/.test(f)) v -= 2000; else if (es && /^(en|eng)$/.test(f)) v -= 300; }
     else if (/dual[ ._-]?audio/.test(t)) v -= 150; }
-  if (/\b(ita|ger|german|spa|latino|rus|hindi|pol|tur|por|dublado)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 150; else if (/\b(french|truefrench|vff|vfq|vf|vostfr)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 30; if (/\b(dubbed|english dub|dub)\b/.test(t) && !/\b(dual|multi)\b/.test(t)) v -= 30;
+  if (es) { if (/\b(spa|spanish|castellano|esp)\b/.test(t)) v += 150; else if (/\b(eng|english)\b/.test(t) && !/\b(multi|dual)\b/.test(t)) v -= 400; }
+  else if (/\b(ita|ger|german|spa|latino|rus|hindi|pol|tur|por|dublado)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 150; else if (/\b(french|truefrench|vff|vfq|vf|vostfr)\b/.test(t) && !/\b(eng|english|multi)\b/.test(t)) v -= 30; if (/\b(dubbed|english dub|dub)\b/.test(t) && !/\b(dual|multi)\b/.test(t)) v -= 30;
   v += Math.min(sizeGB(s), 60) / 3;
   return v;
 }
@@ -3440,9 +3445,12 @@ function getStreams(type, id) {
   const section = type === 'anime' ? 'anime' : (tab === 'dramas' && type === 'series' ? 'asian' : '');
   const key = type + '/' + id + (section ? '#' + section : '');
   if (!streamsCache.has(key)) {
-    streamsCache.set(key, local('/api/streams?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id) + (section ? '&section=' + section : '')).then(j => {
+    // A Spanish series: versions with Spanish sound come first (the players then add English or French subtitles).
+    const lang = type === 'series' && isImdb(rootId(id)) ? within(tmdbInfo(type, rootId(id)), 2500).then(i => (i && i.meta && i.meta.origLang) || '') : Promise.resolve('');
+    streamsCache.set(key, Promise.all([local('/api/streams?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id) + (section ? '&section=' + section : '')), lang]).then(([j, origLang]) => {
+      const es = origLang === 'es';
       const list = (j.streams || []).filter(s => typeof s.n === 'number');
-      list.sort((a, b) => score(b) - score(a));
+      list.sort((a, b) => score(b, es) - score(a, es));
       list.error = j.error;
       return list;
     }).catch(e => { streamsCache.delete(key); throw e; }));
